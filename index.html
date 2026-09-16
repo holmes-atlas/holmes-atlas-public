@@ -503,6 +503,27 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
 .modal-cancel{background:none;border:1px solid var(--line);color:var(--charcoal);padding:7px 16px;border-radius:3px;cursor:pointer;}
 .modal-submit{background:var(--brass);border:none;color:#fff;padding:7px 18px;border-radius:3px;cursor:pointer;}
+.modal-submit:disabled{opacity:.45;cursor:not-allowed;}
+/* 出発地・目的地を自分で選ぶモーダル（openRoutePickStopsModal）専用。地点ごとに
+   1行、右側に◎（出発地）○（目的地）の2つのボタンを並べる。地点数が多い
+   （最大25件）ことを考慮し、リスト自体を内側でスクロールさせてモーダルの
+   縦幅が際限なく伸びないようにしている。 */
+.route-pick-list{max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:4px;margin-top:10px;}
+.route-pick-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;
+  border-bottom:1px solid var(--line);background:#fff;}
+.route-pick-row:last-child{border-bottom:none;}
+.route-pick-name{font-size:.85rem;color:var(--charcoal);flex:1;min-width:0;}
+.route-pick-btns{display:flex;gap:6px;flex:none;}
+.route-pick-btn{background:none;border:1px solid var(--line);color:var(--slate);padding:5px 9px;
+  border-radius:3px;cursor:pointer;font-size:.78rem;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+.route-pick-btn:hover{background:#f7ecd0;}
+.route-pick-origin.active{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:600;}
+.route-pick-dest.active{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600;}
+@media (max-width:480px){
+  .route-pick-row{flex-direction:column;align-items:flex-start;gap:6px;}
+  .route-pick-btns{width:100%;}
+  .route-pick-btn{flex:1;}
+}
 .danger-zone{margin-top:22px;padding-top:14px;border-top:1px dashed var(--burgundy);text-align:right;}
 .review-count-badge{background:var(--burgundy);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px;}
 .review-list{max-height:420px;overflow-y:auto;margin:14px 0;}
@@ -2703,8 +2724,12 @@ const GMAPS_ROUTE_MAX_STOPS = 25;
 function openRouteForFavoriteList(listId){
   const list = favoriteLists.find(l=>l.id===listId);
   if(!list) return;
+  // DATA[id]自体にはidプロパティが入っていない（idはDATAオブジェクトの
+  // キーとしてのみ存在する）ため、出発地・目的地を自分で指定する機能
+  // （openRoutePickStopsModal）でどの地点かを判別できるよう、ここでコピーに
+  // idを足しておく（DATA本体は書き換えない）。
   let stops = list.entityIds
-    .map(id=>DATA[id])
+    .map(id=>DATA[id] ? {...DATA[id], id} : null)
     .filter(e=>e && e.type==='place' && e.coords);
   if(stops.length===0){
     showToast('このリストにはルート表示できる地点がまだありません。');
@@ -2732,6 +2757,7 @@ function openRouteOriginConfirmModal(stops){
     <div class="field">
       <div class="hint">「いいえ」：<strong>リストの並び順</strong>（登録順。リスト編集画面でドラッグして変えられます）通りに、最初の地点から最後の地点まで順番に巡るルートになります。<br>現在の並び順：${escapeHtml(orderNames)}</div>
       <div class="hint" style="margin-top:6px;">「はい」：現在地を出発点にし、最後の地点（目的地）までの経由順は、Googleマップ側で最短になるよう自動調整します。</div>
+      <div class="hint" style="margin-top:6px;">どちらでもなく、<button type="button" class="link-btn" id="route-origin-pick">出発地・目的地を自分で指定する</button>こともできます。</div>
     </div>
     <div class="modal-actions">
       <button class="modal-cancel" id="route-origin-no">いいえ（登録順で巡る）</button>
@@ -2745,6 +2771,76 @@ function openRouteOriginConfirmModal(stops){
   document.getElementById('route-origin-yes').addEventListener('click', ()=>{
     closeModal();
     openGoogleMapsRoute(stops, true);
+  });
+  document.getElementById('route-origin-pick').addEventListener('click', ()=>{
+    openRoutePickStopsModal(stops);
+  });
+}
+// 出発地・目的地を地点一覧から自分で選ぶモーダル。◎（出発地）○（目的地）は
+// それぞれ1つだけ選べる排他選択（同じ地点を両方に選ぶことはできない＝片方を
+// 選ぶと、その地点がもう片方に入っていた場合は自動的に外れる）。残りの地点は
+// すべて経由地となり、巡回順はGoogleマップのoptimize:trueに任せて自動調整する
+// （並び替えの手間を増やさないための割り切り。厳密な順番を指定したい場合は
+// 従来通りリストの並び順＝「いいえ」を使ってもらう）。
+function openRoutePickStopsModal(stops){
+  let originId = null;
+  let destId = null;
+  const rowHtml = (e) => `
+    <div class="route-pick-row">
+      <span class="route-pick-name">${escapeHtml(e.name)}</span>
+      <div class="route-pick-btns">
+        <button type="button" class="route-pick-btn route-pick-origin${e.id===originId?' active':''}" data-role="origin" data-id="${escapeAttr(e.id)}">◎ 出発地</button>
+        <button type="button" class="route-pick-btn route-pick-dest${e.id===destId?' active':''}" data-role="dest" data-id="${escapeAttr(e.id)}">○ 目的地</button>
+      </div>
+    </div>`;
+  const renderList = () => {
+    const listEl = document.getElementById('route-pick-list');
+    if(!listEl) return;
+    listEl.innerHTML = stops.map(rowHtml).join('');
+    listEl.querySelectorAll('.route-pick-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const role = btn.dataset.role;
+        const id = btn.dataset.id;
+        if(role==='origin'){
+          originId = (originId===id) ? null : id;
+          if(destId===id) destId = null;
+        } else {
+          destId = (destId===id) ? null : id;
+          if(originId===id) originId = null;
+        }
+        renderList();
+      });
+    });
+    const summaryEl = document.getElementById('route-pick-summary');
+    const goBtn = document.getElementById('route-pick-go');
+    if(summaryEl){
+      const originName = originId ? DATA[originId].name : '（未選択）';
+      const destName = destId ? DATA[destId].name : '（未選択）';
+      const waypointCount = stops.length - (originId?1:0) - (destId?1:0);
+      summaryEl.innerHTML = `出発地：<strong>${escapeHtml(originName)}</strong>　→　経由地：${waypointCount}件（Googleマップが最短順に自動調整）　→　目的地：<strong>${escapeHtml(destName)}</strong>`;
+    }
+    if(goBtn) goBtn.disabled = !(originId && destId);
+  };
+  modalBody.innerHTML = `
+    <h3>出発地・目的地を選ぶ</h3>
+    <div class="modal-question">地点の一覧から、出発地と目的地をそれぞれ1つずつ選んでください</div>
+    <div class="field">
+      <div class="hint" id="route-pick-summary"></div>
+    </div>
+    <div class="route-pick-list" id="route-pick-list"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" id="route-pick-back">戻る</button>
+      <button class="modal-submit" id="route-pick-go" disabled>ルートを開く</button>
+    </div>`;
+  overlay.classList.add('open');
+  renderList();
+  document.getElementById('route-pick-back').addEventListener('click', ()=>{
+    openRouteOriginConfirmModal(stops);
+  });
+  document.getElementById('route-pick-go').addEventListener('click', ()=>{
+    if(!originId || !destId) return;
+    closeModal();
+    openGoogleMapsRouteCustom(stops, originId, destId);
   });
 }
 // useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに、
@@ -2761,6 +2857,20 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
     const waypoints = stops.slice(1, -1).map(e=>e.coords.join(',')).join('|');
     if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
   }
+  showToast('Googleマップを開いています…');
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+// 出発地・目的地を自分で指定するモーダル（openRoutePickStopsModal）専用。
+// 選ばれなかった残りの地点はすべて経由地とし、巡回順はoptimize:trueで
+// Googleマップに任せる（ユーザーが選んだのは「どこから」「どこへ」だけで、
+// 途中の順番までは指定していないため）。
+function openGoogleMapsRouteCustom(stops, originId, destId){
+  const origin = stops.find(e=>e.id===originId);
+  const dest = stops.find(e=>e.id===destId);
+  if(!origin || !dest) return;
+  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${origin.coords.join(',')}&destination=${dest.coords.join(',')}`;
+  const waypoints = stops.filter(e=>e.id!==originId && e.id!==destId).map(e=>e.coords.join(',')).join('|');
+  if(waypoints) url += `&waypoints=${encodeURIComponent('optimize:true|'+waypoints)}`;
   showToast('Googleマップを開いています…');
   window.open(url, '_blank', 'noopener,noreferrer');
 }
