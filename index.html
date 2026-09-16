@@ -495,6 +495,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .route-origin-option:hover{background:#f7ecd0;border-color:var(--brass);}
 .route-origin-option-title{display:block;font-weight:700;font-size:.95rem;color:var(--charcoal);margin-bottom:4px;}
 .route-origin-option-desc{display:block;font-size:.78rem;color:var(--slate);line-height:1.55;}
+/* 移動手段トグル（徒歩／電車・バス）。openRouteOriginConfirmModal上部に置く。 */
+.route-mode-toggle{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.route-mode-btn{background:none;border:1px solid var(--line);color:var(--slate);padding:6px 14px;border-radius:16px;cursor:pointer;font-size:.85rem;font-family:inherit;}
+.route-mode-btn.active{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600;}
+.route-mode-btn:hover{border-color:var(--teal);}
 .field{margin-bottom:14px;}
 .field label{display:block;font-size:.82rem;font-weight:600;color:var(--slate);margin-bottom:4px;}
 .field input[type=text],.field input[type=date],.field textarea,.field select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:3px;font-size:.9rem;background:#fff;}
@@ -2890,6 +2895,17 @@ const GMAPS_ROUTE_MAX_STOPS = 25;
 // 地点idとは絶対に衝突しない値にしてある。目的地・経由地には現在地を
 // 選べないようにする（Googleマップ側もdestinationには実在の地点が必要）。
 const ROUTE_CURRENT_LOCATION_ID = '__route_current_location__';
+// 移動手段の選択肢。Googleマップのtravelmodeパラメータにそのまま渡せる値を
+// idにしている。徒歩をデフォルトにしている（お気に入りは近所の史跡巡りなど、
+// 徒歩での利用を主に想定しているため）。
+const ROUTE_TRAVEL_MODES = [
+  {id:'walking', label:'🚶 徒歩', plainLabel:'徒歩'},
+  {id:'transit', label:'🚃 電車・バス', plainLabel:'電車・バス'}
+];
+function routeTravelModeLabel(mode){
+  const m = ROUTE_TRAVEL_MODES.find(x=>x.id===mode);
+  return m ? m.plainLabel : mode;
+}
 function openRouteForFavoriteList(listId){
   const list = favoriteLists.find(l=>l.id===listId);
   if(!list) return;
@@ -2920,10 +2936,19 @@ function openRouteForFavoriteList(listId){
 // 見た目だったのを統一した）。既存のモーダル基盤（overlay/modalBody/
 // closeModal）をそのまま使う。背景クリック・Escape・右上の✕ボタン（全モーダル
 // 共通）のいずれで閉じても、Googleマップは開かずキャンセル扱いになる。
-function openRouteOriginConfirmModal(stops){
+function openRouteOriginConfirmModal(stops, travelMode){
+  let mode = ROUTE_TRAVEL_MODES.some(m=>m.id===travelMode) ? travelMode : 'walking';
   const orderNames = stops.map(e=>e.name).join(' → ');
+  const modeToggleHtml = `
+    <div class="field">
+      <label>移動手段</label>
+      <div class="route-mode-toggle" id="routeModeToggle">
+        ${ROUTE_TRAVEL_MODES.map(m=>`<button type="button" class="route-mode-btn${m.id===mode?' active':''}" data-mode="${m.id}">${m.label}</button>`).join('')}
+      </div>
+    </div>`;
   modalBody.innerHTML = `
     <h3>ルートの出発地点</h3>
+    ${modeToggleHtml}
     <div class="modal-question">巡り方を選んでください</div>
     <div class="route-origin-options">
       <button type="button" class="route-origin-option" id="route-origin-no">
@@ -2940,16 +2965,22 @@ function openRouteOriginConfirmModal(stops){
       </button>
     </div>`;
   overlay.classList.add('open');
+  document.querySelectorAll('#routeModeToggle .route-mode-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      mode = btn.dataset.mode;
+      document.querySelectorAll('#routeModeToggle .route-mode-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+    });
+  });
   document.getElementById('route-origin-no').addEventListener('click', ()=>{
     closeModal();
-    openGoogleMapsRoute(stops, false);
+    openGoogleMapsRoute(stops, false, mode);
   });
   document.getElementById('route-origin-yes').addEventListener('click', ()=>{
     closeModal();
-    openGoogleMapsRoute(stops, true);
+    openGoogleMapsRoute(stops, true, mode);
   });
   document.getElementById('route-origin-pick').addEventListener('click', ()=>{
-    openRoutePickStopsModal(stops);
+    openRoutePickStopsModal(stops, mode);
   });
 }
 // 出発地・目的地を地点一覧から自分で選ぶモーダル。◎（出発地）○（目的地）は
@@ -2961,7 +2992,8 @@ function openRouteOriginConfirmModal(stops){
 // 取得して並べ替えようとすると、ポップアップブロックに引っかかりやすい
 // （非同期処理を挟んだ後のwindow.openはブラウザに弾かれることがある）ため、
 // あえて並べ替えず、経由地一覧の並び順のまま渡す。
-function openRoutePickStopsModal(stops){
+function openRoutePickStopsModal(stops, travelMode){
+  const mode = ROUTE_TRAVEL_MODES.some(m=>m.id===travelMode) ? travelMode : 'walking';
   let originId = null;
   let destId = null;
   // 出発地・目的地のどちらでもない地点は、既定では全て経由地に含める
@@ -3033,7 +3065,8 @@ function openRoutePickStopsModal(stops){
     <h3>出発地・目的地を選ぶ</h3>
     <div class="modal-question">地点の一覧から、出発地と目的地をそれぞれ1つずつ選んでください</div>
     <div class="field">
-      <div class="hint" id="route-pick-summary"></div>
+      <div class="hint">移動手段：${escapeHtml(routeTravelModeLabel(mode))}（変更する場合は「戻る」から選び直してください）</div>
+      <div class="hint" id="route-pick-summary" style="margin-top:6px;"></div>
       <div class="hint" style="margin-top:6px;">出発地・目的地以外の地点は、チェックを外すと今回のルートから除外できます（既定では全て経由地に含まれます）。「現在地」を出発地に選ぶと、実際にその場で開いた時に現在地からのルートになります。</div>
     </div>
     <div class="route-pick-list" id="route-pick-list"></div>
@@ -3044,12 +3077,12 @@ function openRoutePickStopsModal(stops){
   overlay.classList.add('open');
   renderList();
   document.getElementById('route-pick-back').addEventListener('click', ()=>{
-    openRouteOriginConfirmModal(stops);
+    openRouteOriginConfirmModal(stops, mode);
   });
   document.getElementById('route-pick-go').addEventListener('click', ()=>{
     if(!originId || !destId) return;
     closeModal();
-    openGoogleMapsRouteCustom(stops, originId, destId, waypointIncluded);
+    openGoogleMapsRouteCustom(stops, originId, destId, waypointIncluded, mode);
   });
 }
 // ---------- 経由地の並び替え（近い順の簡易最適化） ----------
@@ -3129,8 +3162,9 @@ function splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint){
   }
   return legs;
 }
-function buildGmapsLegUrl(leg){
-  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${leg.destination.coords.join(',')}`;
+function buildGmapsLegUrl(leg, travelMode){
+  const mode = ROUTE_TRAVEL_MODES.some(m=>m.id===travelMode) ? travelMode : 'walking';
+  let url = `https://www.google.com/maps/dir/?api=1&travelmode=${mode}&destination=${leg.destination.coords.join(',')}`;
   if(leg.origin) url += `&origin=${leg.origin.coords.join(',')}`;
   const wp = leg.waypoints.map(e=>e.coords.join(',')).join('|');
   if(wp) url += `&waypoints=${encodeURIComponent(wp)}`;
@@ -3141,27 +3175,28 @@ function buildGmapsLegUrl(leg){
 // 「開く」ボタンを並べたモーダルを挟む（自動で連続オープンはしない。
 // ポップアップブロックに引っかかりやすいのと、区間の切れ目でいったん
 // 現地を確認してから次に進みたい、という使い方にも合っているため）。
-function openRouteLegsOrDirect(startPoint, orderedWaypoints, destPoint){
+function openRouteLegsOrDirect(startPoint, orderedWaypoints, destPoint, travelMode){
   const legs = splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint);
   if(legs.length <= 1){
     const leg = legs[0] || { origin: startPoint, waypoints: orderedWaypoints, destination: destPoint };
     showToast('Googleマップを開いています…');
-    window.open(buildGmapsLegUrl(leg), '_blank', 'noopener,noreferrer');
+    window.open(buildGmapsLegUrl(leg, travelMode), '_blank', 'noopener,noreferrer');
     return;
   }
-  openMultiLegRouteModal(legs);
+  openMultiLegRouteModal(legs, travelMode);
 }
 // useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに。
 // trueなら出発地を指定せず（＝Googleマップ側で現在地を使う）、末尾だけを目的地に
 // 固定する。この場合、出発地点（＝実際の現在地）がこちらのJSからは分からないため
-// 経由地の並べ替えはできず、渡された順のまま案内する。
-function openGoogleMapsRoute(stops, useCurrentLocation){
+// 経由地の並べ替えはできず、渡された順のまま案内する。travelModeはopenRouteOriginConfirmModal
+// の移動手段トグルで選んだ値（'walking'/'transit'）。
+function openGoogleMapsRoute(stops, useCurrentLocation, travelMode){
   const destPoint = stops[stops.length-1];
   if(useCurrentLocation){
-    openRouteLegsOrDirect(null, stops.slice(0, -1), destPoint);
+    openRouteLegsOrDirect(null, stops.slice(0, -1), destPoint, travelMode);
   } else {
     const ordered = orderStopsNearestNeighbor(stops[0].coords, stops.slice(1, -1));
-    openRouteLegsOrDirect(stops[0], ordered, destPoint);
+    openRouteLegsOrDirect(stops[0], ordered, destPoint, travelMode);
   }
 }
 // 出発地・目的地を自分で指定するモーダル（openRoutePickStopsModal）専用。
@@ -3171,8 +3206,8 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
 // そこから近い順にorderStopsNearestNeighborで並べ替える。originIdが
 // ROUTE_CURRENT_LOCATION_ID（「現在地」）の場合は、その座標がJS側からは分から
 // ないため並べ替えは行わない（openGoogleMapsRouteのuseCurrentLocation=trueと
-// 同じ考え方）。
-function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds){
+// 同じ考え方）。travelModeはopenRoutePickStopsModalで選んだ移動手段。
+function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds, travelMode){
   const useCurrentLocation = originId === ROUTE_CURRENT_LOCATION_ID;
   const origin = useCurrentLocation ? null : stops.find(e=>e.id===originId);
   const dest = stops.find(e=>e.id===destId);
@@ -3180,7 +3215,7 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds)
   const includedSet = waypointIncludedIds instanceof Set ? waypointIncludedIds : new Set(waypointIncludedIds||[]);
   const toVisit = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id));
   const orderedWaypoints = useCurrentLocation ? toVisit : orderStopsNearestNeighbor(origin.coords, toVisit);
-  openRouteLegsOrDirect(useCurrentLocation ? null : origin, orderedWaypoints, dest);
+  openRouteLegsOrDirect(useCurrentLocation ? null : origin, orderedWaypoints, dest, travelMode);
 }
 // 経由地が上限を超え、区間が2つ以上に分かれた場合に開くモーダル。区間ごとに
 // 「開く」ボタンを縦に並べ、押すとその区間だけのGoogleマップのリンクを新しい
@@ -3188,7 +3223,7 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds)
 // 開いた区間には✓を添えてどこまで進んだか分かるようにするが、ボタン自体は
 // 無効化しない（タブを間違えて閉じてしまった、もう一度確認したい、といった
 // 場合に何度でも押し直せるようにするため）。
-function openMultiLegRouteModal(legs){
+function openMultiLegRouteModal(legs, travelMode){
   const limit = gmapsWaypointLimit();
   const rowsHtml = legs.map((leg,i)=>{
     const originName = leg.origin ? leg.origin.name : '現在地';
@@ -3208,7 +3243,7 @@ function openMultiLegRouteModal(legs){
   }).join('');
   modalBody.innerHTML = `
     <h3>ルートを${legs.length}つの区間に分けました</h3>
-    <div class="modal-sub">Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください（何度でも開き直せます）。</div>
+    <div class="modal-sub">移動手段：${escapeHtml(routeTravelModeLabel(travelMode))}。Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください（何度でも開き直せます）。</div>
     <div class="route-leg-list">${rowsHtml}</div>
     <div class="modal-actions"><button class="modal-cancel" id="route-leg-close">閉じる</button></div>`;
   overlay.classList.add('open');
@@ -3218,7 +3253,7 @@ function openMultiLegRouteModal(legs){
       const i = parseInt(btn.dataset.legIdx, 10);
       const leg = legs[i];
       showToast(`区間${i+1}のGoogleマップを開いています…`);
-      window.open(buildGmapsLegUrl(leg), '_blank', 'noopener,noreferrer');
+      window.open(buildGmapsLegUrl(leg, travelMode), '_blank', 'noopener,noreferrer');
       btn.textContent = originalLabel + ' ✓';
       btn.classList.add('opened');
     });
