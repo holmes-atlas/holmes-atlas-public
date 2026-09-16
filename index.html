@@ -185,6 +185,14 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .mt-select-menu-item.active{font-weight:600;}
 .mt-select-check{display:inline-block;width:16px;flex:none;color:var(--brass);font-weight:700;}
 .mt-select-menu-count{opacity:.6;font-size:.78rem;margin-left:3px;}
+/* お気に入りリスト各行：左が絞り込み用の既存ボタン（クリックで選択）、右が
+   Googleマップでルートを開くための小さな別ボタン。2つのクリック対象が
+   隣接するので、ルート側は必ずevent.stopPropagation()で親に伝播させない。 */
+.mt-select-menu-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line);}
+.mt-select-menu-row .mt-select-menu-item{border-bottom:none;flex:1;min-width:0;}
+.mt-select-route-btn{background:#fff;border:none;border-left:1px solid var(--line);color:var(--fog);
+  width:34px;flex:none;cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center;}
+.mt-select-route-btn:hover{background:#f7ecd0;color:var(--brass-light);}
 @media (max-width:480px){
   .mt-seg{padding:0 9px;gap:5px;}
   .mt-select-btn{padding:0 9px;}
@@ -2482,18 +2490,63 @@ function populateFavFilterMenu(){
     const active = value===(favListFilter||'');
     return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" role="option"><span class="mt-select-check">${active?'✓':''}</span>${escapeHtml(label)}${count!=null?` <span class="mt-select-menu-count">（${count}）</span>`:''}</button>`;
   };
+  // 実在するお気に入りリストの行だけは「絞り込みボタン＋ルートボタン」の2要素構成にする。
+  // 「全て表示」プレースホルダーはルート化しようがないので単独ボタンのまま。
+  const listRowHtml = (l) => `<div class="mt-select-menu-row">${itemHtml(l.id, l.name, l.entityIds.length)}<button type="button" class="mt-select-route-btn" data-route-list="${escapeAttr(l.id)}" title="このリストの地点をGoogleマップでルート表示" aria-label="このリストの地点をGoogleマップでルート表示">🧭</button></div>`;
   let html = itemHtml('', '全て表示');
   if(!currentUser){
     html += `<div class="mt-select-menu-section">ログインするとお気に入りリストで絞り込めます</div>`;
   } else if(favoriteLists.length===0){
     html += `<div class="mt-select-menu-section">まだお気に入りリストがありません</div>`;
   } else {
-    html += favoriteLists.map(l=>itemHtml(l.id, l.name, l.entityIds.length)).join('');
+    html += favoriteLists.map(listRowHtml).join('');
   }
   menu.innerHTML = html;
   menu.querySelectorAll('.mt-select-menu-item').forEach(item=>{
     item.addEventListener('click', ()=>selectFavFilter(item.dataset.value));
   });
+  menu.querySelectorAll('[data-route-list]').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      openRouteForFavoriteList(btn.dataset.routeList);
+    });
+  });
+}
+// お気に入りリストに入っている地点（座標を持つplace）を、順番通りに
+// Googleマップの「ルート」（複数経由地）として新しいタブで開く。
+// 徒歩ルートをデフォルトにする（お気に入りは近所の史跡巡りなどの用途を想定）。
+// 出発地・目的地は「現在地」に頼らず、リスト内の並び順（追加順）の
+// 最初の地点を出発地、最後の地点を目的地にする。これなら実際にロンドンに
+// いない時でも、リストの地点を結んだルートをそのまま眺めて楽しめる。
+// 出発地・目的地を並べ替えたい場合は、リスト編集画面で項目の順番を
+// （チェックの外し入れで）調整してから使う想定。
+// Googleマップの経由地URLには上限（出発地・目的地を含め合計25地点程度）が
+// あるため、超える場合は先頭から25件に切り詰めてトーストで知らせる。
+const GMAPS_ROUTE_MAX_STOPS = 25;
+function openRouteForFavoriteList(listId){
+  const list = favoriteLists.find(l=>l.id===listId);
+  if(!list) return;
+  let stops = list.entityIds
+    .map(id=>DATA[id])
+    .filter(e=>e && e.type==='place' && e.coords);
+  if(stops.length===0){
+    showToast('このリストにはルート表示できる地点がまだありません。');
+    return;
+  }
+  if(stops.length===1){
+    showToast('ルートを表示するには地点が2つ以上必要です。');
+    return;
+  }
+  if(stops.length > GMAPS_ROUTE_MAX_STOPS){
+    stops = stops.slice(0, GMAPS_ROUTE_MAX_STOPS);
+    showToast(`地点数が多いため、先頭${GMAPS_ROUTE_MAX_STOPS}件でルートを作成しました。`);
+  }
+  const origin = stops[0].coords;
+  const destination = stops[stops.length-1].coords;
+  const waypoints = stops.slice(1, -1).map(e=>e.coords.join(',')).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${origin.join(',')}&destination=${destination.join(',')}`;
+  if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 const favFilterBtn = document.getElementById('favFilterBtn');
 favFilterBtn.addEventListener('click', (ev)=>{
@@ -3770,10 +3823,7 @@ function renderMyDraftRow(entry){
   const info = draftDisplayInfo(entry);
   return `<div class="my-draft-row">
     <span>${escapeHtml(info.kindLabel)}：${escapeHtml(info.name)}<span class="fav-list-count">（${info.savedAgoText}）</span></span>
-    <span style="display:flex;align-items:center;gap:10px;">
-      ${info.canContinue ? `<button type="button" class="link-btn" data-draft-continue="${escapeAttr(entry.key)}">続きを編集</button>` : ''}
-      <button type="button" class="draft-discard-btn" data-draft-discard="${escapeAttr(entry.key)}" title="この下書きを破棄" aria-label="この下書きを破棄">×</button>
-    </span>
+    ${info.canContinue ? `<button type="button" class="link-btn" data-draft-continue="${escapeAttr(entry.key)}">続きを編集</button>` : ''}
   </div>`;
 }
 function proposalStatusBadge(status){
@@ -3811,12 +3861,6 @@ function openMyEditsModal(){
     btn.addEventListener('click', ()=>{
       const entry = drafts.find(d=>d.key===btn.dataset.draftContinue);
       if(entry) continueDraft(entry);
-    });
-  });
-  document.querySelectorAll('#my-drafts-list [data-draft-discard]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      try{ localStorage.removeItem(btn.dataset.draftDiscard); }catch(e){}
-      openMyEditsModal();
     });
   });
 }
