@@ -179,6 +179,20 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
   max-height:280px;overflow-y:auto;background:var(--parchment);border:1px solid var(--line);
   border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);display:none;}
 .mt-select-menu.show{display:block;}
+/* ヘッダー付きメニュー（表示絞り込みのみ）は、選んでも閉じない代わりに上部へ
+   固定の閉じるボタンを常時出しておく必要があるため、外枠を縦のflexコンテナに
+   分割し、スクロールは中の.mt-select-menu-bodyだけに閉じ込める。ヘッダーを
+   持たない通常のメニュー（お気に入り絞り込みなど）は今まで通り.mt-select-menu
+   自体がそのままスクロール領域になる。 */
+.mt-select-menu.mt-select-menu-with-header{display:flex;flex-direction:column;max-height:320px;overflow:hidden;padding:0;}
+.mt-select-menu.mt-select-menu-with-header.show{display:flex;}
+.mt-select-menu-header{display:flex;align-items:center;justify-content:space-between;flex:none;
+  padding:6px 4px 6px 12px;border-bottom:1px solid var(--line);background:var(--parchment-2);}
+.mt-select-menu-title{font-size:.75rem;color:var(--slate);font-weight:600;letter-spacing:.02em;}
+.mt-select-menu-close{background:none;border:none;color:var(--slate);font-size:.95rem;line-height:1;
+  cursor:pointer;padding:6px 9px;border-radius:3px;-webkit-tap-highlight-color:transparent;}
+.mt-select-menu-close:hover{background:#e3d6ac;color:var(--charcoal);}
+.mt-select-menu-body{overflow-y:auto;flex:1;min-height:0;}
 .mt-select-menu-section{padding:6px 12px;font-size:.7rem;color:var(--slate);background:var(--parchment-2);}
 /* 正典作品一覧の折りたたみ見出し。中身が長いリスト（.mt-select-menu-collapse-body）
    の開閉トグルを兼ねるため、通常の.mt-select-menu-sectionと違いボタン化して
@@ -190,6 +204,15 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .mt-select-collapse-arrow{display:inline-block;width:8px;flex:none;font-size:.65rem;color:var(--brass);}
 .mt-select-menu-collapse-body{display:none;}
 .mt-select-menu-collapse-body.expanded{display:block;}
+/* 表示絞り込みメニュー専用のチェックボックス表示。選んでも閉じない運用にした
+   ため、✓マークだけのシンプルな表現より「今チェックが入っているかどうか」が
+   一目でわかるよう、枠付きの四角で示す。地点フィルター側（全ての地点／全ての
+   正典登場地／作品ごと）は内部的には従来通り単一選択のままだが、見た目は
+   ほかの項目と統一してチェックボックス方式にしている。 */
+.mt-select-checkbox{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+  flex:none;margin-right:9px;border:1.5px solid var(--fog);border-radius:3px;color:#fff;
+  font-size:.68rem;font-weight:700;line-height:1;background:transparent;}
+.mt-select-menu-item.active .mt-select-checkbox{border-color:var(--brass);background:var(--brass);}
 .mt-select-menu-item{display:flex;align-items:center;gap:0;width:100%;text-align:left;background:#fff;border:none;
   border-bottom:1px solid var(--line);padding:9px 12px;font-size:.85rem;color:var(--charcoal);
   cursor:pointer;font-family:'Crimson Pro',serif;}
@@ -634,8 +657,20 @@ body.map-picking .leaflet-container{cursor:crosshair;}
          横スクロールのためoverflow-x:autoにしている）の外に置き、帯の真上に浮かせて
          表示する（帯の中に置くと、横スクロール用のoverflow設定に巻き込まれて
          上にはみ出す部分が見えなくなってしまうため）。 -->
-    <div class="mt-select-menu" id="viewFilterMenu" role="listbox"></div>
-    <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はviewFilterMenuと同じ）。 -->
+    <!-- 表示絞り込みメニューだけは、選んでも閉じずに複数の項目をチェックボックス感覚で
+         続けて切り替えられるようにしている（他の絞り込みと違い、地点フィルターと
+         訪問記録ピンの表示/非表示という独立した軸が同居しており、両方まとめて
+         調整したい場面があるため）。そのため上部に固定の閉じるボタンを持つヘッダーを
+         置き、実際の項目一覧（#viewFilterMenuBody）だけをスクロール領域にしている。 -->
+    <div class="mt-select-menu mt-select-menu-with-header" id="viewFilterMenu" role="group" aria-label="表示絞り込み">
+      <div class="mt-select-menu-header">
+        <span class="mt-select-menu-title">表示絞り込み</span>
+        <button type="button" class="mt-select-menu-close" id="viewFilterMenuClose" aria-label="閉じる" title="閉じる">✕</button>
+      </div>
+      <div class="mt-select-menu-body" id="viewFilterMenuBody"></div>
+    </div>
+    <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はviewFilterMenuと同じ）。
+         こちらは1つ選んだらすぐ地図が動いて目的が完結するので、従来通り選択即クローズのまま。 -->
     <div class="mt-select-menu" id="favFilterMenu" role="listbox"></div>
     <!-- 現在地ボタン・221Bへボタンは帯から独立させ、帯の真上に積み重ねた
          浮きボタンにしている。こうすることで「表示絞り込み」「古地図」の文字ラベルを
@@ -2421,7 +2456,10 @@ function selectViewFilter(value, label){
   }
   setViewFilterLabel(label, !!value);
   syncViewFilterBtnActive();
-  closeViewFilterMenu();
+  // 選んでもメニューは閉じない（✕ボタンで明示的に閉じる運用）。チェック状態は
+  // ここで作り直して最新化する（例：作品Aを選んだ直後に「全ての地点」「全ての
+  // 正典登場地」のチェックボックスを外し、選んだ作品側にチェックを入れ直す）。
+  populateViewFilterMenu();
   renderMarkers();
   renderIndex();
   if(!workFilter) return;
@@ -2441,8 +2479,8 @@ function selectViewFilter(value, label){
   }
 }
 function populateViewFilterMenu(){
-  const menu = document.getElementById('viewFilterMenu');
-  if(!menu) return;
+  const menuBody = document.getElementById('viewFilterMenuBody');
+  if(!menuBody) return;
   const prevValue = viewFilterValue;
   const canonWorks = [];
   Object.keys(DATA).forEach(id=>{
@@ -2458,9 +2496,12 @@ function populateViewFilterMenu(){
   // journalMarkersVisibleと同様、メニューを開き直しても保持する。
   const canonSelected = !!(prevValue && DATA[prevValue] && DATA[prevValue].type==='work' && DATA[prevValue].canon);
   if(canonSelected) viewFilterCanonExpanded = true;
+  // data-labelを別に持たせているのは、item.textContentをそのままラベルとして
+  // 使うと、チェック済み項目（内部に✓を含むチェックボックス用span）のテキストまで
+  // 拾ってしまい「✓全ての地点」のようにボタンの表示ラベルへ✓が混入してしまうため。
   const itemHtml = (value, label) => {
     const active = value===prevValue;
-    return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" role="option"><span class="mt-select-check">${active?'✓':''}</span>${escapeHtml(label)}</button>`;
+    return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" data-label="${escapeAttr(label)}" role="checkbox" aria-checked="${active?'true':'false'}"><span class="mt-select-checkbox">${active?'✓':''}</span>${escapeHtml(label)}</button>`;
   };
   let html = itemHtml('', '全ての地点');
   html += itemHtml('__core__', '全ての正典登場地');
@@ -2475,17 +2516,18 @@ function populateViewFilterMenu(){
   // を持たせず、下で専用のクリックハンドラを付ける（他の項目と同じ汎用ハンドラに
   // 拾われないようにするため）。
   html += `<div class="mt-select-menu-section">訪問記録（地図上のピン）</div>`;
-  html += `<button type="button" class="mt-select-menu-item${journalMarkersVisible?' active':''}" id="viewFilterJournalToggle" role="option"><span class="mt-select-check">${journalMarkersVisible?'✓':''}</span>訪問記録を地図に表示する</button>`;
-  menu.innerHTML = html;
-  menu.querySelectorAll('.mt-select-menu-item[data-value]').forEach(item=>{
-    item.addEventListener('click', ()=>selectViewFilter(item.dataset.value, item.textContent));
+  html += `<button type="button" class="mt-select-menu-item${journalMarkersVisible?' active':''}" id="viewFilterJournalToggle" role="checkbox" aria-checked="${journalMarkersVisible?'true':'false'}"><span class="mt-select-checkbox">${journalMarkersVisible?'✓':''}</span>訪問記録を地図に表示する</button>`;
+  menuBody.innerHTML = html;
+  menuBody.querySelectorAll('.mt-select-menu-item[data-value]').forEach(item=>{
+    item.addEventListener('click', ()=>selectViewFilter(item.dataset.value, item.dataset.label));
   });
   const journalToggleItem = document.getElementById('viewFilterJournalToggle');
   if(journalToggleItem){
     journalToggleItem.addEventListener('click', (ev)=>{
       ev.stopPropagation();
       setJournalMarkersVisible(!journalMarkersVisible);
-      closeViewFilterMenu();
+      // 選んでもメニューは閉じない。チェックの見た目だけこの場で最新化する。
+      populateViewFilterMenu();
       syncViewFilterBtnActive();
     });
   }
@@ -2526,6 +2568,16 @@ document.addEventListener('click', (ev)=>{
 document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeViewFilterMenu(); });
 window.addEventListener('resize', closeViewFilterMenu);
 document.getElementById('mapControlsCluster').addEventListener('scroll', closeViewFilterMenu);
+// このメニューは項目を選んでも閉じない運用にしたため、明示的に閉じる手段として
+// ヘッダー右上に✕ボタンを常設している（ヘッダー自体はpopulateViewFilterMenu()の
+// 書き換え対象外＝静的マークアップなので、ここで一度だけ配線すればよい）。
+const viewFilterMenuCloseBtn = document.getElementById('viewFilterMenuClose');
+if(viewFilterMenuCloseBtn){
+  viewFilterMenuCloseBtn.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    closeViewFilterMenu();
+  });
+}
 
 // ---------- お気に入りリストごとの地点絞り込み ----------
 // 作品ごとの絞り込み（workFilter、すぐ上）と全く同じ「自前ボタン＋一覧」のUIパターンを
