@@ -81,6 +81,8 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .index-filter-clear-btn:hover{color:var(--burgundy);}
 .index-close{display:none;flex:none;background:none;border:none;font-size:1.5rem;line-height:1;color:var(--slate);cursor:pointer;padding:2px 6px;}
 .index-close:hover{color:var(--burgundy);}
+.index-guide-btn{flex:none;display:block;width:calc(100% - 20px);margin:10px 10px 0;background:var(--teal);border:none;color:#fff;font-size:.8rem;font-weight:600;padding:8px 0;border-radius:3px;cursor:pointer;text-align:center;font-family:inherit;}
+.index-guide-btn:hover{background:#264d4a;}
 .index-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 0 20px;}
 .index-filter-empty{padding:16px;font-size:.82rem;color:var(--slate);font-style:italic;}
 .index-group-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:var(--ink-2);border:none;font-weight:600;font-size:.78rem;color:var(--brass-light);padding:9px 16px;margin:0;border-bottom:1px solid var(--line);border-top:1px solid var(--line);cursor:pointer;}
@@ -480,6 +482,17 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .modal{background:var(--parchment);color:var(--charcoal);border-radius:5px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 24px 26px;border-top:4px solid var(--brass);}
 .modal h3{font-family:'Playfair Display',serif;margin:0 0 4px;font-size:1.25rem;color:var(--ink);}
 .modal .modal-sub{font-size:.82rem;opacity:.7;margin-bottom:16px;}
+/* 使い方ガイド（openUsageGuideModal）専用。長文になるので、見出し＋本文の
+   セクションを縦に並べる。.modal自体がoverflow-y:autoなので、モーダルの中で
+   普通にスクロールできる。 */
+.guide-section{margin-bottom:16px;}
+.guide-section:last-child{margin-bottom:0;}
+.guide-section-title{display:flex;align-items:center;gap:6px;font-family:'Playfair Display',serif;font-weight:600;font-size:1.02rem;color:var(--ink);margin:0 0 6px;border-top:1px solid var(--line);padding-top:14px;}
+.guide-section:first-child .guide-section-title{border-top:none;padding-top:0;}
+.guide-section-body{font-size:.85rem;color:var(--charcoal);line-height:1.75;}
+.guide-section-body p{margin:0 0 8px;}
+.guide-section-body p:last-child{margin-bottom:0;}
+.guide-section-body strong{color:var(--ink);}
 /* .modal-subは「控えめな補足説明」用のスタイル（他の多くのモーダルで使用中）なので、
    ルート出発地点の確認モーダルのように、そこがモーダルの主題そのもの（ユーザーに
    決めてほしい問い）である場合はこちらを使う。文字を大きく・太く・地の色（薄い
@@ -721,6 +734,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
       </div>
       <button class="index-close" id="indexClose" title="索引を閉じる" aria-label="索引を閉じる">×</button>
     </div>
+    <button type="button" class="index-guide-btn" id="indexGuideBtn">📖 使い方ガイド</button>
     <div class="index-scroll" id="indexScroll"></div>
   </div>
 
@@ -3135,6 +3149,17 @@ function isLikelyMobileBrowser(){
 function gmapsWaypointLimit(){
   return isLikelyMobileBrowser() ? 3 : 9;
 }
+// 電車・バス（transit）は、そもそもGoogleマップのDirections APIが経由地
+// （waypoints）自体をサポートしていない（"The API supports waypoints for
+// these travel modes: driving, walking and bicycling; not transit."と
+// 公式ドキュメントに明記されている）。徒歩・自転車・車の時のような
+// モバイル/デスクトップの件数上限とは別の、そもそも0件までしか渡せない
+// という制約なので、区間ごとの経由地数の上限をtravelModeごとに出し分ける。
+// 参考：https://developers.google.com/maps/documentation/directions/get-directions
+function legWaypointLimit(travelMode){
+  if(travelMode === 'transit') return 0;
+  return gmapsWaypointLimit();
+}
 // ---------- 経由地が上限を超える場合の「区間分割」 ----------
 // 単純に切り詰めて残りを諦めるのではなく、上限に収まる区間（leg）に分割し、
 // ある区間の終点を次の区間の出発点にする「リレー」形式でGoogleマップの
@@ -3143,8 +3168,12 @@ function gmapsWaypointLimit(){
 // 例：上限3件・経由地10件なら、区間1（出発地＋経由地3件＋区間1の終点＝
 // 経由地4件目）、区間2（区間1の終点＋経由地3件＋区間2の終点）、
 // 区間3（区間2の終点＋残り2件＋最終目的地）の3区間に分かれる。
-function splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint){
-  const limit = gmapsWaypointLimit();
+// travelModeが'transit'の場合はlegWaypointLimitが0を返すため、この同じ
+// ロジックのまま「経由地1件ごとに区間を区切る」形になり、電車・バスでも
+// 複数地点をリレー形式で回れる（Googleマップの1回のtransitリクエストには
+// 経由地を一切含めない）。
+function splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint, travelMode){
+  const limit = legWaypointLimit(travelMode);
   const legs = [];
   let legStart = startPoint;
   let idx = 0;
@@ -3176,7 +3205,7 @@ function buildGmapsLegUrl(leg, travelMode){
 // ポップアップブロックに引っかかりやすいのと、区間の切れ目でいったん
 // 現地を確認してから次に進みたい、という使い方にも合っているため）。
 function openRouteLegsOrDirect(startPoint, orderedWaypoints, destPoint, travelMode){
-  const legs = splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint);
+  const legs = splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint, travelMode);
   if(legs.length <= 1){
     const leg = legs[0] || { origin: startPoint, waypoints: orderedWaypoints, destination: destPoint };
     showToast('Googleマップを開いています…');
@@ -3224,7 +3253,10 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds,
 // 無効化しない（タブを間違えて閉じてしまった、もう一度確認したい、といった
 // 場合に何度でも押し直せるようにするため）。
 function openMultiLegRouteModal(legs, travelMode){
-  const limit = gmapsWaypointLimit();
+  const isTransit = travelMode === 'transit';
+  const reasonText = isTransit
+    ? '電車・バスのルートはGoogleマップ側が経由地に対応していないため、区間ごとにリンクを分けています。'
+    : `Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${legWaypointLimit(travelMode)}件まで）、区間ごとにリンクを分けています。`;
   const rowsHtml = legs.map((leg,i)=>{
     const originName = leg.origin ? leg.origin.name : '現在地';
     const destName = leg.destination.name;
@@ -3243,7 +3275,7 @@ function openMultiLegRouteModal(legs, travelMode){
   }).join('');
   modalBody.innerHTML = `
     <h3>ルートを${legs.length}つの区間に分けました</h3>
-    <div class="modal-sub">移動手段：${escapeHtml(routeTravelModeLabel(travelMode))}。Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください（何度でも開き直せます）。</div>
+    <div class="modal-sub">移動手段：${escapeHtml(routeTravelModeLabel(travelMode))}。${reasonText}ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください（何度でも開き直せます）。</div>
     <div class="route-leg-list">${rowsHtml}</div>
     <div class="modal-actions"><button class="modal-cancel" id="route-leg-close">閉じる</button></div>`;
   overlay.classList.add('open');
@@ -4270,6 +4302,78 @@ function closeModal(){
     clearJournalUrl();
     document.title = 'ホームズ・アトラス';
   }
+}
+// 使い方ガイド。索引欄の常設ボタン（indexGuideBtn）から開く、読み物専用の
+// モーダル。機能が増えてきたので、初めて訪れた人でも一通りの使い方が
+// つかめるよう、セクションごとにまとめている。内容はここ（GUIDE_SECTIONS）を
+// 直すだけで良いよう、見出しと本文（HTML断片の配列）に分けている。
+const GUIDE_SECTIONS = [
+  {
+    title: '🗺️ 地図の基本操作',
+    body: [
+      '地図上のピンをタップすると、写真と説明の簡易プレビューが表示されます。プレビュー内の「詳細を見る」をタップすると、その地点のくわしいページが開きます。',
+      '画面上部の検索欄からは、地名やスポット名で直接検索できます。',
+      '📍現在地ボタンで自分の位置を表示、221Bボタンでベーカー街221Bへ一気に移動できます。「古地図」ボタンでホームズ時代（1888〜1913年頃）の地形図に切り替えたり、「名称表示」でズームを寄せなくても地点名を常時表示したりもできます。'
+    ]
+  },
+  {
+    title: '🔎 表示を絞り込む',
+    body: [
+      '地図右下の「表示絞り込み」から、正典に登場する地点だけに絞ったり、特定の作品に登場する地点だけを表示したり、訪問記録ピンの表示・非表示を切り替えたりできます。チェックボックス形式なので、複数の条件を組み合わせて選べます。',
+      '「お気に入り表示」からは、自分が作ったお気に入りリストのうち1つを選んで、そのリストの地点だけを地図に表示できます。'
+    ]
+  },
+  {
+    title: '☆ お気に入り',
+    body: [
+      '地点・人物・作品・用語、どの項目のページからも☆お気に入りボタンで登録できます（地図ピンのプレビューからも☆で直接登録可能）。「お気に入り1」のように複数のリストを作れるので、目的別に分けて整理できます。',
+      '索引欄の「★お気に入り」から、リストごとにまとめて見返せます。リストの並び順はドラッグで自由に変更できます。'
+    ]
+  },
+  {
+    title: '🧭 ルートを組む',
+    body: [
+      'お気に入りリストの地点を実際に歩いて回りたい時は、索引欄のリスト名の横にある🧭ボタンから、Googleマップのルートをまとめて開けます。「登録順で巡る」「現在地から」「出発地・目的地を自分で指定する」の3つから巡り方を選べ、移動手段（徒歩／電車・バス）も最初に選べます。',
+      'お気に入りに登録するほどではないけれど「今回だけ一緒に回りたい」地点は、地図ピンや項目ページの🧭ボタンで「ルートかご」に追加できます。ルートかごはログイン不要で、ページを閉じるまでの一時的な作業台です。中身は後からお気に入りリストとして保存することもできます。',
+      '経由地が多く、Googleマップ側の上限（お使いの環境により3〜9件）を超える場合は、ルートを複数の区間に自動で分けて、区間ごとにリンクを開けるようにしています。電車・バスはGoogleマップ側がそもそも経由地に対応していないため、常に地点ごとに区間を分けます。'
+    ]
+  },
+  {
+    title: '📔 訪問記録とマイ巡礼手帳',
+    body: [
+      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「＋ 訪問記録を追加」、または各地点ページから追加できます。',
+      '「📔 マイ巡礼手帳」（ログイン後にヘッダーへ表示）では、自分の訪問記録と、正典に登場する地点のうちどれだけ巡ったかという踏破状況がまとめて見られます。',
+      '「タイムライン」では、自分に限らずサイト利用者全体の訪問記録が新着順に並びます。'
+    ]
+  },
+  {
+    title: '✏️ 項目の追加・編集',
+    body: [
+      'ヘッダーメニューの「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、各ページの「編集する」から内容を修正できます。',
+      '一般の利用者による追加・編集は「提案」として送信され、審査担当者の確認後に反映されます。自分が出した提案の状況は「編集一覧」から確認できます。'
+    ]
+  },
+  {
+    title: '👤 ログインについて',
+    body: [
+      '地図を眺めたり項目を検索・閲覧したりするだけなら、ログインは不要です。ルートかごも未ログインで使えます。',
+      'お気に入り登録、訪問記録の追加、項目の追加・編集、リストのルートを保存する操作には、ログインが必要です。'
+    ]
+  }
+];
+function openUsageGuideModal(){
+  const sectionsHtml = GUIDE_SECTIONS.map(sec => `
+    <div class="guide-section">
+      <div class="guide-section-title">${sec.title}</div>
+      <div class="guide-section-body">${sec.body.map(p=>`<p>${p}</p>`).join('')}</div>
+    </div>`).join('');
+  modalBody.innerHTML = `
+    <h3>使い方ガイド</h3>
+    <div class="modal-sub">ホームズ・アトラスでできることを、ざっとまとめました。</div>
+    ${sectionsHtml}
+    <div class="modal-actions"><button class="modal-cancel" id="usage-guide-close">閉じる</button></div>`;
+  overlay.classList.add('open');
+  document.getElementById('usage-guide-close').addEventListener('click', closeModal);
 }
 const LEGAL_CONTACT = 'holmesatlas.info@gmail.com';
 function openLegalModal(){
@@ -6207,6 +6311,7 @@ document.addEventListener('click', (ev)=>{ if(!ev.target.closest('.nearby-panel'
 // ---------- 索引トグル・モバイルメニュー ----------
 document.getElementById('indexToggle').addEventListener('click', ()=>document.getElementById('index').classList.toggle('open'));
 document.getElementById('indexClose').addEventListener('click', ()=>document.getElementById('index').classList.remove('open'));
+document.getElementById('indexGuideBtn').addEventListener('click', openUsageGuideModal);
 
 // ---------- 索引の絞り込みボックス ----------
 // #indexFilterInput は毎回のrenderIndex()で作り直されない静的な要素なので、
