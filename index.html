@@ -2441,8 +2441,7 @@ function selectFavFilter(listId){
   const list = favListFilter ? favoriteLists.find(l=>l.id===favListFilter) : null;
   setFavFilterLabel(list ? list.name : 'お気に入り表示', !!list);
   closeFavFilterMenu();
-  renderMarkers();
-  renderIndex();
+  renderMarkers(); // ★地図側だけ絞り込む。索引（サイドの一覧）はあえて連動させず、開いたままの状態を保つ
   if(!list) return;
   const coordsList = list.entityIds
     .map(id=>DATA[id])
@@ -2781,9 +2780,9 @@ function renderIndex(){
     } else if(e.type==='place'){
       const passCore = !coreOnlyFilter || e.relevance==='core';
       const passWork = !workFilter || (e.related||[]).includes(workFilter);
-      const favList = favListFilter ? favoriteLists.find(l=>l.id===favListFilter) : null;
-      const passFav = !favListFilter || (favList && favList.entityIds.includes(id));
-      if(passCore && passWork && passFav) groups.place.push(id);
+      // ★お気に入りリストでの地図の絞り込み（favListFilter）は索引には連動させない
+      // （地図だけ絞り込んで、索引はそのまま全件見えている状態を保つ）
+      if(passCore && passWork) groups.place.push(id);
     } else {
       groups[e.type].push(id);
     }
