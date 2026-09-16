@@ -4134,7 +4134,7 @@ function renderPhoto(photo, entityId){
   let creditLine = creditBits.join(' ／ ');
   if(photo.sourceUrl) creditLine += (creditLine?' ':'') + `<a href="${escapeAttr(photo.sourceUrl)}" target="_blank" rel="noopener noreferrer">出典</a>`;
   const label = photo.year || '';
-  const delBtn = photo.id ? `<button class="photo-del-btn" data-del-photo="${photo.id}" data-photo-entity="${entityId}" title="この写真を削除">×</button>` : '';
+  const delBtn = (photo.id && isReviewer()) ? `<button class="photo-del-btn" data-del-photo="${photo.id}" data-photo-entity="${entityId}" title="この写真を削除">×</button>` : '';
   return `<div class="photo-block">
     ${delBtn}
     ${label ? `<div class="photo-label">${escapeHtml(label)}</div>` : ''}
