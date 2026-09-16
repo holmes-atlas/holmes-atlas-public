@@ -3960,15 +3960,20 @@ function openFavoriteListsModal(entityId){
 function openFavoriteListEditModal(listId){
   const list = favoriteLists.find(l=>l.id===listId);
   if(!list) return;
+  // ×ボタンでの即削除は、誤タップした時に戻す手段がなく怖いという声があったため、
+  // チェックボックス形式に変更した。外すと即座にリストから外れる点は変わらないが、
+  // （1）チェックを外してもその場で項目自体は消えず、間違えたらすぐ再チェックして
+  // 元に戻せる、（2）見た目も「削除」ではなく「チェックのon/off」なので、誤操作の
+  // 心理的なハードルが下がる、という2点を狙っている。
   const itemsHtml = () => {
     const items = list.entityIds.map(id=>({id, e:DATA[id]})).filter(x=>x.e);
     items.sort((a,b)=>a.e.name.localeCompare(b.e.name,'ja'));
     if(items.length===0) return '<div class="alias-list-empty">まだ何も入っていません。上の検索から追加できます。</div>';
-    return items.map(({id,e})=>`<div class="alias-list-item"><span><span class="dot dot-${entityClass(e)}"></span>${escapeHtml(e.name)}<span class="fav-list-count">（${entityLabel(e)}）</span></span><button type="button" class="alias-delete-btn" data-fle-remove="${id}" title="リストから外す" aria-label="リストから外す">×</button></div>`).join('');
+    return items.map(({id,e})=>`<label><input type="checkbox" data-fle-item="${id}" checked> <span class="dot dot-${entityClass(e)}"></span>${escapeHtml(e.name)}<span class="fav-list-count">（${entityLabel(e)}）</span></label>`).join('');
   };
   modalBody.innerHTML = `
     <h3>リストを編集</h3>
-    <div class="modal-sub">名前の変更や、入っている項目の追加・削除ができます。</div>
+    <div class="modal-sub">名前の変更や、入っている項目の追加・削除ができます。チェックを外すとリストから外れます（間違えたらそのまま再チェックすれば元に戻せます）。</div>
     <div class="field">
       <label>リスト名</label>
       <input type="text" id="fle-name-input" value="${escapeAttr(list.name)}">
@@ -3979,7 +3984,7 @@ function openFavoriteListEditModal(listId){
       <div class="map-search-results" id="fle-add-results"></div>
     </div>
     <div class="field">
-      <label>入っている項目（${list.entityIds.length}件）</label>
+      <label>入っている項目（<span id="fle-item-count">${list.entityIds.length}</span>件）</label>
       <div class="checklist" id="fle-item-list" style="max-height:240px;">${itemsHtml()}</div>
     </div>
     <div class="modal-actions"><button class="modal-cancel" id="fle-close-btn">確定</button></div>`;
@@ -4001,14 +4006,19 @@ function openFavoriteListEditModal(listId){
   nameInput.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); nameInput.blur(); } });
   nameInput.addEventListener('blur', commitName);
 
-  document.querySelectorAll('#fle-item-list [data-fle-remove]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.fleRemove;
-      list.entityIds = list.entityIds.filter(x=>x!==id);
+  // ★チェックの変更時は、あえてモーダル全体を作り直さない。作り直してしまうと
+  // 外した項目がチェックリストから消えてしまい、「間違えたらすぐ再チェックして
+  // 戻す」ということができなくなるため。件数表示だけその場で更新する。
+  document.querySelectorAll('#fle-item-list [data-fle-item]').forEach(cb=>{
+    cb.addEventListener('change', async ()=>{
+      const id = cb.dataset.fleItem;
+      if(cb.checked){ if(!list.entityIds.includes(id)) list.entityIds.push(id); }
+      else { list.entityIds = list.entityIds.filter(x=>x!==id); }
       await safeSet(favoritesKey(), favoriteLists);
+      const countEl = document.getElementById('fle-item-count');
+      if(countEl) countEl.textContent = list.entityIds.length;
       renderIndex();
       if(favListFilter === listId) renderMarkers();
-      openFavoriteListEditModal(listId);
     });
   });
 
