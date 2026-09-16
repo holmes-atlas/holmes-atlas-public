@@ -430,6 +430,16 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .proposal-meta{font-size:.72rem;opacity:.65;margin-bottom:8px;}
 .proposal-detail{font-size:.85rem;line-height:1.6;margin-bottom:10px;}
 .proposal-actions{display:flex;gap:8px;}
+.proposal-status{display:inline-block;font-size:.68rem;padding:1px 8px;border-radius:2px;margin-left:4px;}
+.proposal-status-pending{background:var(--slate);color:#fff;}
+.proposal-status-approved{background:var(--moss);color:#fff;}
+.proposal-status-rejected{background:var(--burgundy);color:#fff;}
+/* 編集一覧モーダル（明るい背景）専用。.alias-list-item / .alias-delete-btn は
+   暗い索引サイドバー向けに color:var(--fog) で作られており、明るい背景の
+   モーダルの中で使うと文字色が薄すぎて読みにくくなるため、別クラスにしている。 */
+.my-draft-row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 12px;font-size:.85rem;color:var(--charcoal);background:var(--parchment-2);border:1px solid var(--line);border-radius:4px;margin-bottom:8px;}
+.draft-discard-btn{background:none;border:1px solid var(--line);color:var(--slate);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.78rem;flex:none;line-height:1;padding:0;}
+.draft-discard-btn:hover{border-color:var(--burgundy);color:var(--burgundy);}
 .danger-delete-btn{background:none;border:1px solid var(--burgundy);color:var(--burgundy);padding:6px 16px;border-radius:3px;cursor:pointer;font-size:.82rem;}
 .danger-delete-btn:hover:not(:disabled){background:var(--burgundy);color:#fff;}
 .danger-delete-btn:disabled{opacity:.4;cursor:not-allowed;}
@@ -514,6 +524,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <div class="action-btns" id="actionBtns">
       <button class="hbtn primary" id="addEntityBtn">＋ 新しい項目を追加</button>
       <button class="hbtn" id="addJournalBtn">＋ 訪問記録を追加</button>
+      <button class="hbtn" id="myEditsBtn">編集一覧</button>
       <button class="hbtn" id="timelineToggle">タイムライン</button>
       <button class="hbtn" id="exportBtn">データをエクスポート</button>
       <span class="auth-area" id="authArea"></span>
@@ -3705,6 +3716,115 @@ async function resolveReport(reportId, shouldDelete){
   updateReviewCountBadge();
   openReviewDashboard();
 }
+// ---------- 編集一覧（自分の投稿・下書きの一覧） ----------
+// 「すでに送信した提案」と「まだ送信していない下書き（この端末のlocalStorageのみ）」を
+// まとめて見られる、一般会員向けの一覧。審査ダッシュボード（openReviewDashboard）とは
+// 違い、他人の投稿は見えず、承認・却下のような審査担当者専用の操作も一切出さない
+// （うっかり一般会員に承認ボタンを見せてしまうと事故のもとになるため、あえて
+// renderProposalCardは使い回さず、読み取り専用の別関数として分けている）。
+const DRAFT_KEY_PREFIX = 'holmes-atlas-draft:';
+function myDraftEntries(){
+  const uid = currentUser ? currentUser.id : 'anon';
+  const prefix = DRAFT_KEY_PREFIX + uid + ':';
+  const out = [];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const key = localStorage.key(i);
+      if(!key || !key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length); // "<formType>:<id>"
+      const sepIdx = rest.indexOf(':');
+      if(sepIdx<0) continue;
+      const formType = rest.slice(0, sepIdx);
+      const id = rest.slice(sepIdx+1);
+      let parsed;
+      try{ parsed = JSON.parse(localStorage.getItem(key)); }catch(e){ continue; }
+      if(!parsed || !parsed.data) continue;
+      out.push({formType, id, data:parsed.data, savedAt:parsed.savedAt||0, key});
+    }
+  }catch(e){}
+  out.sort((a,b)=>b.savedAt-a.savedAt);
+  return out;
+}
+function draftDisplayInfo(entry){
+  const savedAgo = Math.max(1, Math.round((Date.now() - entry.savedAt) / 60000));
+  const savedAgoText = savedAgo < 60 ? `${savedAgo}分前` : `${Math.round(savedAgo/60)}時間前`;
+  if(entry.formType === 'newEntity'){
+    return { kindLabel:'新規追加', name: entry.data['f-name'] || '（名称未入力）', savedAgoText, canContinue:true };
+  }
+  if(entry.formType === 'editEntity'){
+    const target = DATA[entry.id];
+    return { kindLabel:'編集', name: target ? target.name : `（削除済みの項目：${entry.id}）`, savedAgoText, canContinue: !!target };
+  }
+  if(entry.formType === 'journal'){
+    const isNote = entry.id !== 'new' && DATA[entry.id] && DATA[entry.id].type !== 'place';
+    return { kindLabel: isNote ? '感想' : '訪問記録', name: entry.data['j-name'] || '（名称未入力）', savedAgoText, canContinue:true };
+  }
+  return { kindLabel: entry.formType, name: entry.id, savedAgoText, canContinue:false };
+}
+function continueDraft(entry){
+  if(entry.formType === 'newEntity'){ openEntityModal(); return; }
+  if(entry.formType === 'editEntity'){ if(DATA[entry.id]) openEditModal(entry.id); return; }
+  if(entry.formType === 'journal'){ openJournalModal(entry.id !== 'new' ? {entityId: entry.id} : {}); return; }
+}
+function renderMyDraftRow(entry){
+  const info = draftDisplayInfo(entry);
+  return `<div class="my-draft-row">
+    <span>${escapeHtml(info.kindLabel)}：${escapeHtml(info.name)}<span class="fav-list-count">（${info.savedAgoText}）</span></span>
+    <span style="display:flex;align-items:center;gap:10px;">
+      ${info.canContinue ? `<button type="button" class="link-btn" data-draft-continue="${escapeAttr(entry.key)}">続きを編集</button>` : ''}
+      <button type="button" class="draft-discard-btn" data-draft-discard="${escapeAttr(entry.key)}" title="この下書きを破棄" aria-label="この下書きを破棄">×</button>
+    </span>
+  </div>`;
+}
+function proposalStatusBadge(status){
+  const label = status==='approved' ? '承認済み' : (status==='rejected' ? '却下済み' : '審査待ち');
+  return `<span class="proposal-status proposal-status-${status}">${label}</span>`;
+}
+function renderMyProposalCard(p){
+  const kindLabel = p.kind==='new' ? '新規追加' : (p.kind==='photo' ? '写真の追加' : (p.kind==='alias' ? '別名の追加' : '編集'));
+  const targetName = p.kind==='new' ? p.draft.name : (p.kind==='alias' ? p.draft.ja : (DATA[p.targetId]?.name || p.targetId));
+  const dateStr = new Date(p.createdAt).toLocaleString('ja-JP');
+  return `<div class="proposal-card">
+    <div class="proposal-head"><span class="proposal-kind">${kindLabel}</span> <strong>${escapeHtml(targetName)}</strong>${proposalStatusBadge(p.status)}</div>
+    <div class="proposal-meta">${dateStr}</div>
+    ${p.status==='rejected' && p.reviewNote ? `<div class="proposal-detail"><strong>却下理由：</strong>${escapeHtml(p.reviewNote)}</div>` : ''}
+  </div>`;
+}
+function openMyEditsModal(){
+  const drafts = myDraftEntries();
+  const myProposals = proposals.filter(p=>p.authorId===currentUser.id).sort((a,b)=>b.createdAt-a.createdAt);
+  modalBody.innerHTML = `
+    <h3>編集一覧</h3>
+    <div class="modal-sub">あなたが今編集中の下書きと、これまでに送信した提案の一覧です。</div>
+    <div class="review-section-label">編集中の下書き（この端末にのみ保存されています）</div>
+    <div class="review-list" id="my-drafts-list">
+      ${drafts.length===0 ? '<div class="alias-list-empty">編集中の下書きはありません。</div>' : drafts.map(renderMyDraftRow).join('')}
+    </div>
+    <div class="review-section-label">送信した提案</div>
+    <div class="review-list">
+      ${myProposals.length===0 ? '<div class="alias-list-empty">まだ提案を送信していません。</div>' : myProposals.map(renderMyProposalCard).join('')}
+    </div>
+    <div class="modal-actions"><button class="modal-cancel" id="my-edits-close">閉じる</button></div>`;
+  overlay.classList.add('open');
+  document.getElementById('my-edits-close').addEventListener('click', closeModal);
+  document.querySelectorAll('#my-drafts-list [data-draft-continue]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const entry = drafts.find(d=>d.key===btn.dataset.draftContinue);
+      if(entry) continueDraft(entry);
+    });
+  });
+  document.querySelectorAll('#my-drafts-list [data-draft-discard]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      try{ localStorage.removeItem(btn.dataset.draftDiscard); }catch(e){}
+      openMyEditsModal();
+    });
+  });
+}
+document.getElementById('myEditsBtn').addEventListener('click', ()=>{
+  if(!currentUser){ showToast('編集一覧の閲覧にはログインが必要です。'); return; }
+  openMyEditsModal();
+});
+
 function openReviewDashboard(){
   const pending = proposals.filter(p=>p.status==='pending').sort((a,b)=>a.createdAt-b.createdAt);
   const pendingReports = reports.filter(r=>r.status==='pending').sort((a,b)=>a.createdAt-b.createdAt);
