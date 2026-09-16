@@ -564,6 +564,16 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .route-cart-row-name{font-size:.85rem;color:var(--charcoal);flex:1;min-width:0;}
 .route-cart-row-remove{flex:none;background:none;border:1px solid var(--line);color:var(--slate);width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:.78rem;line-height:1;padding:0;}
 .route-cart-row-remove:hover{border-color:var(--burgundy);color:var(--burgundy);}
+/* 経由地が上限を超えた時の区間分割モーダル（openMultiLegRouteModal）。 */
+.route-leg-list{display:flex;flex-direction:column;gap:10px;margin-top:10px;max-height:360px;overflow-y:auto;}
+.route-leg-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:#fff;}
+.route-leg-info{flex:1;min-width:0;}
+.route-leg-num{display:inline-block;font-size:.72rem;font-weight:700;color:#fff;background:var(--teal);border-radius:10px;padding:1px 8px;margin-bottom:4px;}
+.route-leg-desc{display:block;font-size:.85rem;color:var(--charcoal);line-height:1.5;}
+.route-leg-via{display:block;font-size:.74rem;color:var(--slate);margin-top:2px;}
+.route-leg-open-btn{flex:none;white-space:nowrap;}
+.route-leg-open-btn.modal-submit{background:var(--teal);}
+.route-leg-open-btn:disabled{opacity:.55;cursor:default;}
 /* 「現在地」は一覧の実在の地点とは別枠なので、背景を少し変えて区別する
    （出発地専用＝○目的地ボタンを持たない一行だけの特別枠）。 */
 .route-pick-row-current{background:var(--parchment-2);}
@@ -3079,10 +3089,7 @@ function orderStopsNearestNeighbor(startCoords, stopsArr){
 // Googleマップの経由地URL（waypoints）には、公式ドキュメント上の上限がある：
 // モバイルブラウザでは3件、それ以外（デスクトップブラウザ等）では9件まで
 // （出発地・目的地は含まない、中間の経由地だけの件数）。超えて渡すと表示が
-// 崩れる／一部の経由地が無視されるおそれがあるため、URLを組み立てる直前に
-// 必ずこの上限まで切り詰める。GMAPS_ROUTE_MAX_STOPS（25）はあくまで「そもそも
-// ピックアップ画面に何件出すか」というアプリ側のゆるい上限で、実際にGoogleマップへ
-// 渡せる経由地数はここでさらに絞り込む。
+// 崩れる／一部の経由地が無視されるおそれがある。
 // 参考：https://developers.google.com/maps/documentation/urls/get-started
 function isLikelyMobileBrowser(){
   if(navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean'){
@@ -3093,35 +3100,67 @@ function isLikelyMobileBrowser(){
 function gmapsWaypointLimit(){
   return isLikelyMobileBrowser() ? 3 : 9;
 }
-// 並べ替え済みの経由地配列を、実際にURLへ渡せる件数まで切り詰める。並べ替え後
-// なので、先頭から取れば「出発地から近い順に上限件数まで」を自然に残せる
-// （現在地が出発地で並べ替えていない場合は、渡された順の先頭からになる）。
-function capWaypointsForGoogleMaps(orderedWaypoints){
+// ---------- 経由地が上限を超える場合の「区間分割」 ----------
+// 単純に切り詰めて残りを諦めるのではなく、上限に収まる区間（leg）に分割し、
+// ある区間の終点を次の区間の出発点にする「リレー」形式でGoogleマップの
+// リンクを複数用意する。startPointがnull＝現在地（最初の区間の出発地のみ
+// 取りうる。2区間目以降の出発点は必ず実在の地点になる）。
+// 例：上限3件・経由地10件なら、区間1（出発地＋経由地3件＋区間1の終点＝
+// 経由地4件目）、区間2（区間1の終点＋経由地3件＋区間2の終点）、
+// 区間3（区間2の終点＋残り2件＋最終目的地）の3区間に分かれる。
+function splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint){
   const limit = gmapsWaypointLimit();
-  if(orderedWaypoints.length <= limit) return orderedWaypoints;
-  showToast(`お使いの環境ではGoogleマップの経由地は最大${limit}件までのため、近い順に先頭${limit}件だけを経由地にしています。`);
-  return orderedWaypoints.slice(0, limit);
+  const legs = [];
+  let legStart = startPoint;
+  let idx = 0;
+  while(true){
+    const remaining = orderedWaypoints.length - idx;
+    if(remaining <= limit){
+      legs.push({ origin: legStart, waypoints: orderedWaypoints.slice(idx), destination: destPoint });
+      break;
+    }
+    const legWaypoints = orderedWaypoints.slice(idx, idx + limit);
+    const legEnd = orderedWaypoints[idx + limit];
+    legs.push({ origin: legStart, waypoints: legWaypoints, destination: legEnd });
+    idx += limit + 1;
+    legStart = legEnd;
+  }
+  return legs;
+}
+function buildGmapsLegUrl(leg){
+  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${leg.destination.coords.join(',')}`;
+  if(leg.origin) url += `&origin=${leg.origin.coords.join(',')}`;
+  const wp = leg.waypoints.map(e=>e.coords.join(',')).join('|');
+  if(wp) url += `&waypoints=${encodeURIComponent(wp)}`;
+  return url;
+}
+// 区間が1つに収まるなら（ほとんどのケース）今まで通り即座にGoogleマップを
+// 開き、2つ以上に分かれる場合だけopenMultiLegRouteModalで区間ごとの
+// 「開く」ボタンを並べたモーダルを挟む（自動で連続オープンはしない。
+// ポップアップブロックに引っかかりやすいのと、区間の切れ目でいったん
+// 現地を確認してから次に進みたい、という使い方にも合っているため）。
+function openRouteLegsOrDirect(startPoint, orderedWaypoints, destPoint){
+  const legs = splitRouteIntoLegs(startPoint, orderedWaypoints, destPoint);
+  if(legs.length <= 1){
+    const leg = legs[0] || { origin: startPoint, waypoints: orderedWaypoints, destination: destPoint };
+    showToast('Googleマップを開いています…');
+    window.open(buildGmapsLegUrl(leg), '_blank', 'noopener,noreferrer');
+    return;
+  }
+  openMultiLegRouteModal(legs);
 }
 // useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに。
 // trueなら出発地を指定せず（＝Googleマップ側で現在地を使う）、末尾だけを目的地に
 // 固定する。この場合、出発地点（＝実際の現在地）がこちらのJSからは分からないため
-// 経由地の並べ替えはできず、渡された順のまま案内する（コメント末尾を参照）。
+// 経由地の並べ替えはできず、渡された順のまま案内する。
 function openGoogleMapsRoute(stops, useCurrentLocation){
-  const destination = stops[stops.length-1].coords;
-  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${destination.join(',')}`;
+  const destPoint = stops[stops.length-1];
   if(useCurrentLocation){
-    const capped = capWaypointsForGoogleMaps(stops.slice(0, -1));
-    const waypoints = capped.map(e=>e.coords.join(',')).join('|');
-    if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+    openRouteLegsOrDirect(null, stops.slice(0, -1), destPoint);
   } else {
-    url += `&origin=${stops[0].coords.join(',')}`;
     const ordered = orderStopsNearestNeighbor(stops[0].coords, stops.slice(1, -1));
-    const capped = capWaypointsForGoogleMaps(ordered);
-    const waypoints = capped.map(e=>e.coords.join(',')).join('|');
-    if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+    openRouteLegsOrDirect(stops[0], ordered, destPoint);
   }
-  showToast('Googleマップを開いています…');
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 // 出発地・目的地を自分で指定するモーダル（openRoutePickStopsModal）専用。
 // waypointIncludedIds（Setまたは配列。経由地チェックボックスがONの地点id）に
@@ -3129,23 +3168,57 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
 // 今回のルートに一切含めない。出発地が実在の地点（座標が分かっている）なら、
 // そこから近い順にorderStopsNearestNeighborで並べ替える。originIdが
 // ROUTE_CURRENT_LOCATION_ID（「現在地」）の場合は、その座標がJS側からは分から
-// ないため並べ替えは行わず、URLに&origin=も含めずGoogleマップ側の現在地を
-// 使わせる（openGoogleMapsRouteのuseCurrentLocation=trueと同じ考え方）。
+// ないため並べ替えは行わない（openGoogleMapsRouteのuseCurrentLocation=trueと
+// 同じ考え方）。
 function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds){
   const useCurrentLocation = originId === ROUTE_CURRENT_LOCATION_ID;
   const origin = useCurrentLocation ? null : stops.find(e=>e.id===originId);
   const dest = stops.find(e=>e.id===destId);
   if((!useCurrentLocation && !origin) || !dest) return;
   const includedSet = waypointIncludedIds instanceof Set ? waypointIncludedIds : new Set(waypointIncludedIds||[]);
-  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${dest.coords.join(',')}`;
-  if(!useCurrentLocation) url += `&origin=${origin.coords.join(',')}`;
   const toVisit = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id));
   const orderedWaypoints = useCurrentLocation ? toVisit : orderStopsNearestNeighbor(origin.coords, toVisit);
-  const cappedWaypoints = capWaypointsForGoogleMaps(orderedWaypoints);
-  const waypoints = cappedWaypoints.map(e=>e.coords.join(',')).join('|');
-  if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
-  showToast('Googleマップを開いています…');
-  window.open(url, '_blank', 'noopener,noreferrer');
+  openRouteLegsOrDirect(useCurrentLocation ? null : origin, orderedWaypoints, dest);
+}
+// 経由地が上限を超え、区間が2つ以上に分かれた場合に開くモーダル。区間ごとに
+// 「開く」ボタンを縦に並べ、押すとその区間だけのGoogleマップのリンクを新しい
+// タブで開く（クリック直後の同期処理なのでポップアップブロックの心配がない）。
+// 開いた区間はボタンを「開きました」表示にして、どこまで進んだか分かるようにする。
+function openMultiLegRouteModal(legs){
+  const limit = gmapsWaypointLimit();
+  const rowsHtml = legs.map((leg,i)=>{
+    const originName = leg.origin ? leg.origin.name : '現在地';
+    const destName = leg.destination.name;
+    const viaHtml = leg.waypoints.length
+      ? `<span class="route-leg-via">経由：${leg.waypoints.map(w=>escapeHtml(w.name)).join(' → ')}</span>`
+      : '';
+    return `
+    <div class="route-leg-row">
+      <div class="route-leg-info">
+        <span class="route-leg-num">区間${i+1}</span>
+        <span class="route-leg-desc">${escapeHtml(originName)} → ${escapeHtml(destName)}</span>
+        ${viaHtml}
+      </div>
+      <button type="button" class="modal-submit route-leg-open-btn" data-leg-idx="${i}">区間${i+1}を開く</button>
+    </div>`;
+  }).join('');
+  modalBody.innerHTML = `
+    <h3>ルートを${legs.length}つの区間に分けました</h3>
+    <div class="modal-sub">Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください。</div>
+    <div class="route-leg-list">${rowsHtml}</div>
+    <div class="modal-actions"><button class="modal-cancel" id="route-leg-close">閉じる</button></div>`;
+  overlay.classList.add('open');
+  modalBody.querySelectorAll('[data-leg-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = parseInt(btn.dataset.legIdx, 10);
+      const leg = legs[i];
+      showToast(`区間${i+1}のGoogleマップを開いています…`);
+      window.open(buildGmapsLegUrl(leg), '_blank', 'noopener,noreferrer');
+      btn.textContent = '開きました ✓';
+      btn.disabled = true;
+    });
+  });
+  document.getElementById('route-leg-close').addEventListener('click', closeModal);
 }
 // ルートかごの中身を確認・編集するモーダル。お気に入りリストの中身とは完全に別物
 // （routeCart配列そのもの）を表示する。地点を1件外す・かご自体を空にする・
