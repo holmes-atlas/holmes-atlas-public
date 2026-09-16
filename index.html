@@ -468,6 +468,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .my-draft-row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 12px;font-size:.85rem;color:var(--charcoal);background:var(--parchment-2);border:1px solid var(--line);border-radius:4px;margin-bottom:8px;}
 .draft-discard-btn{background:none;border:1px solid var(--line);color:var(--slate);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.78rem;flex:none;line-height:1;padding:0;}
 .draft-discard-btn:hover{border-color:var(--burgundy);color:var(--burgundy);}
+/* 二重確認の1回目を押した直後の状態。丸いアイコンのままだと「本当に削除？」の
+   文字が入らないので、その間だけ横長のピル型に広げて、誤操作でないことが
+   はっきり分かる見た目（赤背景）にする。 */
+.draft-discard-btn.confirming{width:auto;height:auto;border-radius:12px;padding:4px 10px;background:var(--burgundy);border-color:var(--burgundy);color:#fff;font-size:.72rem;white-space:nowrap;}
+.my-draft-actions{display:flex;align-items:center;gap:8px;flex:none;}
 .danger-delete-btn{background:none;border:1px solid var(--burgundy);color:var(--burgundy);padding:6px 16px;border-radius:3px;cursor:pointer;font-size:.82rem;}
 .danger-delete-btn:hover:not(:disabled){background:var(--burgundy);color:#fff;}
 .danger-delete-btn:disabled{opacity:.4;cursor:not-allowed;}
@@ -2405,9 +2410,9 @@ function selectViewFilter(value, label){
   if(coordsList.length===0){
     showToast('この作品に紐づく地図上の地点は見つかりませんでした。');
   } else if(coordsList.length===1){
-    map.flyTo(coordsList[0], Math.max(map.getZoom(), 14), {duration:0.7});
+    flyToNav(coordsList[0], Math.max(map.getZoom(), 14), {duration:0.7});
   } else {
-    map.flyToBounds(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
+    flyToBoundsNav(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
   }
 }
 function populateViewFilterMenu(){
@@ -2508,9 +2513,9 @@ function selectFavFilter(listId){
   if(coordsList.length===0){
     showToast('このリストには地図上の地点がまだありません。');
   } else if(coordsList.length===1){
-    map.flyTo(coordsList[0], Math.max(map.getZoom(), 14), {duration:0.7});
+    flyToNav(coordsList[0], Math.max(map.getZoom(), 14), {duration:0.7});
   } else {
-    map.flyToBounds(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
+    flyToBoundsNav(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
   }
 }
 function populateFavFilterMenu(){
@@ -2644,7 +2649,7 @@ document.getElementById('bakerStreetBtn').addEventListener('click', ()=>{
   panel.classList.remove('open');
   document.getElementById('timeline').classList.remove('open');
   document.getElementById('myBook').classList.remove('open');
-  map.flyTo(DATA[id].coords, zoomForEntity(id), {duration:0.7});
+  flyToNav(DATA[id].coords, zoomForEntity(id), {duration:0.7});
   openPlacePreviewPopup(id);
 });
 
@@ -2767,6 +2772,29 @@ const markerClusterGroup = L.markerClusterGroup({
 function refreshSelectedClusterHighlight(){
   try{ markerClusterGroup.refreshClusters(); }catch(e){ console.error(e); }
 }
+// 221Bボタン・検索結果の選択・訪問記録タップなど「その場所へ一気に飛ぶ」
+// flyToNav()/flyToBoundsNav()（実体はmap.flyTo()/flyToBounds()）の後、Leaflet.markercluster側のクラスタ分割が
+// 追いつかず、着地後も古いクラスタ（本来ズームインして個別ピンに分かれるべき
+// もの）がそのまま残ってしまうことがある（flyToのような大きなジャンプを伴う
+// アニメーションでは、プラグイン内部のズーム追従処理が正しく反映されない既知の
+// 挙動）。ユーザーが手でパン・ピンチズームする分にはこの問題は起きないので、
+// 毎回のmoveendで作り直す（重い）のではなく、flyTo/flyToBoundsによる移動の
+// 直後だけフラグを立てて、着地（moveend）を待ってマーカーを作り直す。
+let pendingClusterFixAfterFly = false;
+function flyToNav(latlng, zoom, opts){
+  pendingClusterFixAfterFly = true;
+  map.flyTo(latlng, zoom, opts);
+}
+function flyToBoundsNav(bounds, opts){
+  pendingClusterFixAfterFly = true;
+  map.flyToBounds(bounds, opts);
+}
+map.on('moveend', ()=>{
+  if(!pendingClusterFixAfterFly) return;
+  pendingClusterFixAfterFly = false;
+  renderMarkers();
+  renderJournalMarkers();
+});
 markerClusterGroup.on('spiderfied', (ev)=>{
   ev.cluster.getTooltip()?.getElement()?.classList.add('spiderfied-hide');
 });
@@ -3383,7 +3411,7 @@ function closePanel(){
   refreshSelectedClusterHighlight();
   document.title = 'ホームズ・アトラス';
   if(lastShownPlace){
-    map.flyTo(lastShownPlace.coords, lastShownPlace.zoom, {duration:0.6});
+    flyToNav(lastShownPlace.coords, lastShownPlace.zoom, {duration:0.6});
     lastShownPlace = null;
   }
 }
@@ -3415,7 +3443,7 @@ function flyToAvoidingPanel(latlng, zoom){
   const targetPoint = map.project(latlng, zoom);
   const shiftedPoint = targetPoint.add(L.point(panelWidth/2, 0));
   const shiftedLatLng = map.unproject(shiftedPoint, zoom);
-  map.flyTo(shiftedLatLng, zoom, {duration:0.7});
+  flyToNav(shiftedLatLng, zoom, {duration:0.7});
 }
 function goToMap(id){
   const e = DATA[id];
@@ -3431,7 +3459,7 @@ function goToMap(id){
   // まっすぐ移動させる。ズーム値は「その地点が個別ピンとして見えるはずの
   // 値」（zoomForEntity）を使うので、クラスタも自然に解除される。
   map.closePopup();
-  map.flyTo(e.coords, zoomForEntity(id), {duration:0.7});
+  flyToNav(e.coords, zoomForEntity(id), {duration:0.7});
   L.popup({closeButton:true, className:'map-jump-name-popup', offset:[0,-6]})
     .setLatLng(e.coords)
     .setContent(escapeHtml(e.name))
@@ -3934,9 +3962,12 @@ function continueDraft(entry){
 }
 function renderMyDraftRow(entry){
   const info = draftDisplayInfo(entry);
-  return `<div class="my-draft-row">
+  return `<div class="my-draft-row" data-draft-row="${escapeAttr(entry.key)}">
     <span>${escapeHtml(info.kindLabel)}：${escapeHtml(info.name)}<span class="fav-list-count">（${info.savedAgoText}）</span></span>
-    ${info.canContinue ? `<button type="button" class="link-btn" data-draft-continue="${escapeAttr(entry.key)}">続きを編集</button>` : ''}
+    <span class="my-draft-actions">
+      ${info.canContinue ? `<button type="button" class="link-btn" data-draft-continue="${escapeAttr(entry.key)}">続きを編集</button>` : ''}
+      <button type="button" class="draft-discard-btn" data-draft-discard="${escapeAttr(entry.key)}" title="この下書きを削除" aria-label="この下書きを削除">🗑</button>
+    </span>
   </div>`;
 }
 function proposalStatusBadge(status){
@@ -3974,6 +4005,33 @@ function openMyEditsModal(){
     btn.addEventListener('click', ()=>{
       const entry = drafts.find(d=>d.key===btn.dataset.draftContinue);
       if(entry) continueDraft(entry);
+    });
+  });
+  // 下書きの削除は二重確認方式にする：1回目のクリックでは消さず、ボタンを
+  // 「本当に削除？」という横長の赤いボタンに一旦差し替えるだけにする。その状態の
+  // 間にもう一度押した時だけ実際に削除する（誤タップ防止）。4秒以内に押されなければ、
+  // 元の🗑アイコンに自動的に戻る。
+  document.querySelectorAll('#my-drafts-list [data-draft-discard]').forEach(btn=>{
+    let revertTimer = null;
+    btn.addEventListener('click', ()=>{
+      if(!btn.classList.contains('confirming')){
+        btn.classList.add('confirming');
+        btn.textContent = '本当に削除？';
+        revertTimer = setTimeout(()=>{
+          btn.classList.remove('confirming');
+          btn.textContent = '🗑';
+        }, 4000);
+        return;
+      }
+      clearTimeout(revertTimer);
+      const entry = drafts.find(d=>d.key===btn.dataset.draftDiscard);
+      if(entry) clearDraft(entry.formType, entry.id);
+      btn.closest('.my-draft-row')?.remove();
+      showToast('下書きを削除しました。');
+      const list = document.getElementById('my-drafts-list');
+      if(list && !list.querySelector('.my-draft-row')){
+        list.innerHTML = '<div class="alias-list-empty">編集中の下書きはありません。</div>';
+      }
     });
   });
 }
@@ -4527,8 +4585,8 @@ function openJournalModal(prefill){
     ${!prefill.entityId ? `
     <div class="field">
       <label>位置を検索する（任意）</label>
-      <div class="geo-row"><input type="text" id="j-geo-query" placeholder="地名で検索"><button type="button" class="geo-search-btn" id="j-geo-search">検索</button></div>
-      <div class="geo-results" id="j-geo-results"></div>
+      <div class="geo-row"><input type="text" id="j-geo-query" placeholder="地名で検索" autocomplete="off"><button type="button" class="geo-search-btn" id="j-geo-search">検索</button></div>
+      <div class="map-search-results" id="j-geo-results"></div>
       <button type="button" class="geo-search-btn geo-map-pick-btn" id="j-geo-map-pick">🗺 地図で指定する</button>
       <div class="hint" id="j-geo-picked" style="display:${coords?'block':'none'};">${coords?`座標を設定しました（${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}）`:''}</div>
     </div>` : ''}
@@ -4575,27 +4633,80 @@ function openJournalModal(prefill){
   }
   wireDraftAutosave('journal', journalDraftId, journalDraftFields, ()=>({visibility}));
   if(!prefill.entityId){
-    document.getElementById('j-geo-search').addEventListener('click', async ()=>{
-      const q = document.getElementById('j-geo-query').value.trim();
-      if(!q) return;
-      const rEl = document.getElementById('j-geo-results');
-      rEl.innerHTML = '<div class="hint">検索中…</div>';
-      const results = await geocodeSearch(q);
-      if(!results || results.length===0){ rEl.innerHTML='<div class="hint">見つかりませんでした。</div>'; return; }
-      rEl.innerHTML = results.map((r,i)=>`<button type="button" class="geo-result-item" data-i="${i}">${escapeHtml(r.display_name)}</button>`).join('');
-      rEl.querySelectorAll('.geo-result-item').forEach(btn=>{
+    // 地図上の検索ボックス（mapSearchInput）と同じ体験にする：入力するそばから
+    // 「アトラス内の登録済み地名」と「外部ジオコーディングの候補地」を両方
+    // 予測表示する。ただし選択時の挙動はmapSearchInputと違い、地図を動かしたり
+    // 詳細ページを開いたりはせず、coords（と空欄ならj-name）を設定するだけ。
+    const jGeoQuery = document.getElementById('j-geo-query');
+    const jGeoResults = document.getElementById('j-geo-results');
+    function applyJournalLocation(coordsPair, name){
+      coords = coordsPair;
+      const nameEl = document.getElementById('j-name');
+      if(!nameEl.value.trim() && name) nameEl.value = name;
+      const pickedEl = document.getElementById('j-geo-picked');
+      if(pickedEl){ pickedEl.style.display='none'; pickedEl.textContent=''; } // 地図クリック由来の表示は検索確定でクリア
+      jGeoResults.classList.remove('show');
+      showToast('位置情報を設定しました。');
+    }
+    function renderJournalGeoResults(localIds, externalResults){
+      let html = '';
+      if(localIds.length){
+        html += `<div class="map-search-section">アトラス内の地名</div>`;
+        html += localIds.map(id=>`<button type="button" class="map-search-item" data-jgeo-local="${id}"><span class="dot dot-${entityClass(DATA[id])}"></span>${escapeHtml(DATA[id].name)}</button>`).join('');
+      }
+      if(externalResults !== null){
+        html += `<div class="map-search-section">地図上の候補地</div>`;
+        if(externalResults === undefined){
+          html += `<div class="map-search-section" style="background:none;">検索に失敗しました。通信環境をご確認のうえ、もう一度お試しください。</div>`;
+        } else if(externalResults.length===0){
+          html += `<div class="map-search-section" style="background:none;">見つかりませんでした</div>`;
+        } else {
+          html += externalResults.map((r,i)=>`<button type="button" class="map-search-item" data-jgeo-ext="${i}">${escapeHtml(r.display_name)}</button>`).join('');
+        }
+      }
+      if(!html){ jGeoResults.classList.remove('show'); jGeoResults.innerHTML=''; return; }
+      jGeoResults.innerHTML = html;
+      jGeoResults.classList.add('show');
+      jGeoResults.querySelectorAll('[data-jgeo-local]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
-          rEl.querySelectorAll('.geo-result-item').forEach(b=>b.classList.remove('selected'));
-          btn.classList.add('selected');
-          const r = results[parseInt(btn.dataset.i)];
-          coords = [parseFloat(r.lat), parseFloat(r.lon)];
-          const nameEl = document.getElementById('j-name');
-          if(!nameEl.value.trim()) nameEl.value = r.display_name.split(/、|,/)[0];
-          const pickedEl = document.getElementById('j-geo-picked');
-          if(pickedEl){ pickedEl.style.display='none'; pickedEl.textContent=''; } // 地図クリック由来の表示は検索確定でクリア
-          showToast('位置情報を設定しました。');
+          const e = DATA[btn.dataset.jgeoLocal];
+          applyJournalLocation(e.coords, e.name);
         });
       });
+      if(externalResults){
+        jGeoResults.querySelectorAll('[data-jgeo-ext]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const r = externalResults[parseInt(btn.dataset.jgeoExt)];
+            applyJournalLocation([parseFloat(r.lat), parseFloat(r.lon)], r.display_name.split(/、|,/)[0]);
+          });
+        });
+      }
+    }
+    // ローカル一致はDATA全件を走査するので軽くデバウンス、外部ジオコーディングは
+    // 通信を伴うため地図検索と同じ500ms。どちらも同じ結果欄に反映する。
+    const runJournalLocalGeoSearch = debounce((q)=>{
+      renderJournalGeoResults(localPlaceMatches(q), null);
+    }, 100);
+    let jGeoExternalDebounce = null;
+    jGeoQuery.addEventListener('input', ()=>{
+      const q = jGeoQuery.value.trim();
+      clearTimeout(jGeoExternalDebounce);
+      if(!q){ runJournalLocalGeoSearch.cancel(); jGeoResults.classList.remove('show'); jGeoResults.innerHTML=''; return; }
+      runJournalLocalGeoSearch(q);
+      jGeoExternalDebounce = setTimeout(async ()=>{
+        const results = await geocodeSearch(q);
+        renderJournalGeoResults(localPlaceMatches(q), results===null ? undefined : results);
+      }, 500);
+    });
+    document.getElementById('j-geo-search').addEventListener('click', async ()=>{
+      const q = jGeoQuery.value.trim();
+      if(!q) return;
+      clearTimeout(jGeoExternalDebounce);
+      runJournalLocalGeoSearch.cancel();
+      jGeoResults.innerHTML = '<div class="map-search-section" style="background:none;">検索中…</div>';
+      jGeoResults.classList.add('show');
+      const results = await geocodeSearch(q);
+      renderJournalGeoResults(localPlaceMatches(q), results===null ? undefined : results);
     });
     // 「地図で指定する」：openEntityModal/openEditModalと同じpickLocationOnMapを
     // そのまま流用。モーダルを一時的に隠して地図を露出させ、クリックした地点を
@@ -4651,12 +4762,20 @@ function openJournalModal(prefill){
     closeModal(); showToast('保存しました。');
     renderJournalMarkers();
     if(prefill.entityId) showEntity(prefill.entityId, {fromTrail:true});
-    else if(coords) map.flyTo(coords, zoomForCoords(coords,null), {duration:0.7});
+    else if(coords) flyToNav(coords, zoomForCoords(coords,null), {duration:0.7});
   });
 }
 document.getElementById('addJournalBtn').addEventListener('click', ()=>{
   if(!currentUser){ showToast('訪問記録の投稿にはログインが必要です。'); return; }
   openJournalModal();
+});
+// 訪問記録モーダルの位置検索の予測候補は、モーダルが開いている間だけ存在する
+// 要素（#j-geo-results）を対象にしているので、ここで一度だけ（openJournalModalの
+// 中ではなく）配線しておけば、モーダルを何度開いてもリスナーが積み重ならない。
+// モーダルが閉じていればgetElementByIdがnullを返すだけで何も起きない。
+document.addEventListener('click', (ev)=>{
+  if(ev.target.closest('#j-geo-query') || ev.target.closest('#j-geo-results')) return;
+  document.getElementById('j-geo-results')?.classList.remove('show');
 });
 
 function refreshJournalViews(){
@@ -4803,7 +4922,7 @@ function renderTimeline(){
       if(eid) showEntity(eid);
       else if(card.dataset.tlLat){
         const c=[parseFloat(card.dataset.tlLat), parseFloat(card.dataset.tlLng)];
-        map.flyTo(c, zoomForCoords(c,null), {duration:0.7});
+        flyToNav(c, zoomForCoords(c,null), {duration:0.7});
       }
     });
   });
@@ -4925,7 +5044,7 @@ function renderMyBook(){
       if(eid) showEntity(eid);
       else if(card.dataset.tlLat){
         const c=[parseFloat(card.dataset.tlLat), parseFloat(card.dataset.tlLng)];
-        map.flyTo(c, zoomForCoords(c,null), {duration:0.7});
+        flyToNav(c, zoomForCoords(c,null), {duration:0.7});
       }
     });
   });
@@ -4952,6 +5071,11 @@ function fuzzyMatch(target, query){
 }
 function localMatches(q){
   return Object.keys(DATA).filter(id=>fuzzyMatch(DATA[id].name, q)).slice(0,6);
+}
+// 訪問記録の「位置を検索する」など、座標が必要な場面専用。地点（place）かつ
+// 座標を持つ項目だけに絞ったlocalMatches。
+function localPlaceMatches(q){
+  return Object.keys(DATA).filter(id=>DATA[id].type==='place' && DATA[id].coords && fuzzyMatch(DATA[id].name, q)).slice(0,6);
 }
 function renderSearchResults(localIds, externalResults, query){
   let html='';
@@ -4991,7 +5115,7 @@ function renderSearchResults(localIds, externalResults, query){
         panel.classList.remove('open');
         timelineEl.classList.remove('open');
         myBookEl.classList.remove('open');
-        map.flyTo(e.coords, zoomForEntity(id), {duration:0.7});
+        flyToNav(e.coords, zoomForEntity(id), {duration:0.7});
         openPlacePreviewPopup(id);
       } else {
         // 人物・作品・用語など地図上に対応する場所がない項目は、
@@ -5036,7 +5160,7 @@ function zoomForSearchResult(r){
 function selectExternalLocation(r){
   const lat=parseFloat(r.lat), lng=parseFloat(r.lon);
   panel.classList.remove('open'); timelineEl.classList.remove('open');
-  map.flyTo([lat,lng], zoomForSearchResult(r), {duration:0.8});
+  flyToNav([lat,lng], zoomForSearchResult(r), {duration:0.8});
   if(externalMarker) map.removeLayer(externalMarker);
   externalMarker = L.marker([lat,lng], {icon: L.divIcon({className:'leaflet-holmes-icon', iconSize:[26,26], iconAnchor:[13,26],
     html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><circle cx="12" cy="9" r="3"/><path d="M12 21c-4-4-7-7.5-7-11a7 7 0 0 1 14 0c0 3.5-3 7-7 11z"/></svg>'})}).addTo(map);
@@ -5208,7 +5332,7 @@ function handleFirstFix(userCoords){
   const nearby = Object.keys(DATA).filter(id=>DATA[id].type==='place' && DATA[id].coords)
     .map(id=>({id, dist: haversineKm(userCoords, DATA[id].coords)})).sort((a,b)=>a.dist-b.dist).slice(0,8);
   if(nearby.length===0 || nearby[0].dist>300){
-    map.flyTo(userCoords, 12, {duration:0.8});
+    flyToNav(userCoords, 12, {duration:0.8});
     showToast('現在地の近くに登録済みの場所は見つかりませんでした。');
     nearbyPanel.classList.remove('show');
     return;
@@ -5218,7 +5342,7 @@ function handleFirstFix(userCoords){
   nearbyPanel.classList.add('show');
   nearbyPanel.querySelectorAll('[data-id]').forEach(btn=>btn.addEventListener('click', ()=>{ nearbyPanel.classList.remove('show'); showEntity(btn.dataset.id); }));
   document.getElementById('nearbyPanelClose').addEventListener('click', ()=>nearbyPanel.classList.remove('show'));
-  map.flyTo(userCoords, 11, {duration:0.8});
+  flyToNav(userCoords, 11, {duration:0.8});
 }
 
 function onLocationUpdate(pos){
