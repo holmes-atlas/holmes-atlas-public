@@ -298,6 +298,7 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .fav-toggle-btn{float:right;background:none;border:1px solid var(--line);color:var(--slate);font-size:.8rem;padding:3px 10px;border-radius:12px;cursor:pointer;margin-bottom:10px;}
 .fav-toggle-btn.active{background:var(--brass);border-color:var(--brass);color:#fff;}
 .fav-toggle-btn:hover{border-color:var(--brass);}
+.fav-list-count{color:var(--slate);font-size:.78rem;}
 .badge-place{background:var(--brass);} .badge-person{background:var(--burgundy);}
 .badge-work{background:var(--teal);} .badge-term{background:var(--slate);}
 .badge-pastiche{background:var(--pastiche);}
@@ -619,10 +620,42 @@ let privateNotes = []; // [{id, entityId, placeName, coords, visibility:'private
 function privateNotesKey(){
   return currentUser ? ('p-notes:' + currentUser.id) : null;
 }
-// ★お気に入り（登録した地名・作品・人物・用語のentityId一覧）も会員ごとに保存する。
-let favorites = [];
+// ★お気に入り。以前は単純なentityIdの配列だったが、「お気に入り1」「お気に入り2」…と
+// 複数のリストを持てるように [{id, name, entityIds:[entityId,...]}] の配列へ拡張した。
+// 保存キー（p-favorites:<userId>）はアカウント削除時のサーバー側クリーンアップと紐づいて
+// いるため、キー名自体は変えず、中身の形だけを拡張している。旧形式（文字列の配列）が
+// 読み込まれた場合は、読み込み時に一度だけ「お気に入り1」という単一リストへ自動移行する。
+let favoriteLists = []; // [{id, name, entityIds:[entityId,...]}]
 function favoritesKey(){
   return currentUser ? ('p-favorites:' + currentUser.id) : null;
+}
+function normalizeFavoriteLists(raw){
+  if(!Array.isArray(raw) || raw.length===0) return [];
+  if(typeof raw[0] === 'string'){
+    // 旧形式（entityIdのフラットな配列）からの移行
+    return [{id:'list-'+Date.now().toString(36), name:'お気に入り1', entityIds: raw.slice()}];
+  }
+  return raw;
+}
+async function resolveFavoriteLists(){
+  const raw = await safeGet(favoritesKey());
+  const normalized = normalizeFavoriteLists(raw);
+  if(Array.isArray(raw) && raw.length>0 && typeof raw[0]==='string'){
+    await safeSet(favoritesKey(), normalized); // 移行後の形で保存し直す（次回からはこちらが読まれる）
+  }
+  return normalized;
+}
+function isInAnyFavoriteList(id){
+  return favoriteLists.some(l=>l.entityIds.includes(id));
+}
+function favoriteListsContaining(id){
+  return favoriteLists.filter(l=>l.entityIds.includes(id));
+}
+function defaultFavoriteListName(){
+  let n = favoriteLists.length + 1;
+  const existingNames = new Set(favoriteLists.map(l=>l.name));
+  while(existingNames.has(`お気に入り${n}`)) n++;
+  return `お気に入り${n}`;
 }
 function getDisplayName(user){
   if(!user) return '';
@@ -913,7 +946,7 @@ supabaseClient.auth.onAuthStateChange(async (event, session)=>{
   if(event === 'PASSWORD_RECOVERY'){ openSetNewPasswordModal(); return; }
   currentUser = session?.user || null;
   privateNotes = asArray(await safeGet(privateNotesKey()));
-  favorites = asArray(await safeGet(favoritesKey()));
+  favoriteLists = await resolveFavoriteLists();
   renderAuthArea();
 });
 
@@ -1586,13 +1619,13 @@ async function submitProposal(kind, targetType, targetId, draft){
 }
 
 async function loadAll(){
-  const [ov, add, notes, favs, jour, aliases, props, reps] = await Promise.all([
-    safeGet('p-overrides'), safeGet('p-additions'), safeGet(privateNotesKey()), safeGet(favoritesKey()), safeGet('p-journal'), safeGet('p-aliases'), safeGet('p-proposals'), safeGet('p-reports')
+  const [ov, add, notes, jour, aliases, props, reps] = await Promise.all([
+    safeGet('p-overrides'), safeGet('p-additions'), safeGet(privateNotesKey()), safeGet('p-journal'), safeGet('p-aliases'), safeGet('p-proposals'), safeGet('p-reports')
   ]);
   overrides = ov || {};
   additions = add || {};
   privateNotes = asArray(notes);
-  favorites = asArray(favs);
+  favoriteLists = await resolveFavoriteLists();
   journal = jour || [];
   customAliases = aliases || {};
   proposals = props || [];
@@ -2649,7 +2682,7 @@ function renderIndex(){
   // お気に入り（ジャンル別。絞り込み中は該当する項目だけに絞られる）
   const favByType = {place:[], person:[], work:[], 'work-pastiche':[], term:[]};
   ['place','person','work','work-pastiche','term'].forEach(t=>{
-    favByType[t] = groups[t].filter(id=>favorites.includes(id));
+    favByType[t] = groups[t].filter(id=>isInAnyFavoriteList(id));
   });
   const favTotal = Object.values(favByType).reduce((a,arr)=>a+arr.length, 0);
   // 絞り込み中は、結果が見えるようそのジャンルを強制的に開いた状態で表示する
@@ -2896,8 +2929,9 @@ function showEntity(id, opts={}){
        <a class="map-jump-main-btn" href="https://www.google.com/maps/search/${encodeURIComponent(e.name)}/@${e.coords[0]},${e.coords[1]},17z" target="_blank" rel="noopener noreferrer">${gmapsIconSvg} Googleマップ（営業時間など）</a>`
     : '';
   const journalHtml = renderEntityJournalSection(id);
-  const isFav = favorites.includes(id);
-  const favBtnHtml = `<button class="fav-toggle-btn ${isFav?'active':''}" id="favToggleBtn">${isFav?'★':'☆'} お気に入り</button>`;
+  const favListsForEntity = favoriteListsContaining(id);
+  const isFav = favListsForEntity.length > 0;
+  const favBtnHtml = `<button class="fav-toggle-btn ${isFav?'active':''}" id="favToggleBtn">${isFav?'★':'☆'} お気に入り${isFav?`（${favListsForEntity.length}）`:''}</button>`;
   const DESC_LIMIT = 500;
   const descBodyHtml = renderDescBody(e.desc);
   const descHtml = descVisibleLength(e.desc) > DESC_LIMIT
@@ -2967,12 +3001,9 @@ function showEntity(id, opts={}){
       openDisambiguateModal(id, seg.token, seg.candidates, seg.display);
     });
   });
-  document.getElementById('favToggleBtn')?.addEventListener('click', async ()=>{
+  document.getElementById('favToggleBtn')?.addEventListener('click', ()=>{
     if(!currentUser){ showToast('お気に入り登録にはログインが必要です。'); return; }
-    if(favorites.includes(id)) favorites = favorites.filter(x=>x!==id); else favorites.push(id);
-    await safeSet(favoritesKey(), favorites);
-    showEntity(id, {fromTrail:true});
-    renderIndex();
+    openFavoriteListsModal(id);
   });
   {
     const shareUrl = absoluteUrlForEntity(id);
@@ -3639,8 +3670,8 @@ async function deleteEntity(targetId){
     overrides[targetId].deleted = true;
     await rpcObjMerge('p-overrides', targetId, {deleted:true});
   }
-  favorites = favorites.filter(x=>x!==targetId);
-  await safeSet(favoritesKey(), favorites);
+  favoriteLists.forEach(l=>{ l.entityIds = l.entityIds.filter(x=>x!==targetId); });
+  await safeSet(favoritesKey(), favoriteLists);
   privateNotes = privateNotes.filter(n=>n.entityId!==targetId);
   await safeSet(privateNotesKey(), privateNotes);
   DATA = buildData();
@@ -3666,6 +3697,50 @@ function openAliasModal(){
     closeModal();
     showToast(appliedDirectly ? '辞書に登録しました。' : '提案を送信しました。審査担当者の確認後に反映されます。');
     renderIndex();
+  });
+}
+
+// お気に入りリストへの追加・作成モーダル。チェックボックスを操作するたびその場で
+// 保存する（「保存する」ボタンを別途用意しない）。新規リスト作成後は同じentityIdで
+// 再度開き直して、作ったばかりのリストにもチェックが付いた状態を見せる。
+function openFavoriteListsModal(entityId){
+  const e = DATA[entityId];
+  if(!e) return;
+  modalBody.innerHTML = `
+    <h3>お気に入りリストに追加</h3>
+    <div class="modal-sub">「${escapeHtml(e.name)}」を追加したいリストにチェックを入れてください。</div>
+    <div class="checklist" id="favListCheckList">
+      ${favoriteLists.length ? favoriteLists.map(l=>`
+        <label><input type="checkbox" data-fav-list-id="${l.id}" ${l.entityIds.includes(entityId)?'checked':''}> ${escapeHtml(l.name)} <span class="fav-list-count">（${l.entityIds.length}件）</span></label>
+      `).join('') : '<div class="alias-list-empty">まだリストがありません。下から新しく作成できます。</div>'}
+    </div>
+    <div class="field">
+      <label>新しいリストを作る</label>
+      <div class="geo-row"><input type="text" id="fav-new-list-name" placeholder="お気に入り${favoriteLists.length+1}"><button type="button" class="geo-search-btn" id="fav-new-list-create">作成して追加</button></div>
+    </div>
+    <div class="modal-actions"><button class="modal-cancel" id="fav-modal-close">閉じる</button></div>`;
+  overlay.classList.add('open');
+  document.getElementById('fav-modal-close').addEventListener('click', closeModal);
+  document.querySelectorAll('#favListCheckList input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', async ()=>{
+      const list = favoriteLists.find(l=>l.id===cb.dataset.favListId);
+      if(!list) return;
+      if(cb.checked){ if(!list.entityIds.includes(entityId)) list.entityIds.push(entityId); }
+      else { list.entityIds = list.entityIds.filter(x=>x!==entityId); }
+      await safeSet(favoritesKey(), favoriteLists);
+      showEntity(entityId, {fromTrail:true});
+      renderIndex();
+    });
+  });
+  document.getElementById('fav-new-list-create').addEventListener('click', async ()=>{
+    const rawName = document.getElementById('fav-new-list-name').value.trim();
+    const name = rawName || defaultFavoriteListName();
+    const newList = {id:'list-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name, entityIds:[entityId]};
+    favoriteLists.push(newList);
+    await safeSet(favoritesKey(), favoriteLists);
+    showEntity(entityId, {fromTrail:true});
+    renderIndex();
+    openFavoriteListsModal(entityId);
   });
 }
 
