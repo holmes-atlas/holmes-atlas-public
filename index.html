@@ -2863,8 +2863,13 @@ function populateFavFilterMenu(){
 // 　並べ替えた順番）通りに最初の地点→最後の地点を辿る。実際にロンドンにいない
 // 　時でも、リストの地点を結んだルートをそのまま眺めて楽しめる。
 // ・「はい」＝現在地を出発地にし、最後の地点（目的地）は固定したまま、
-// 　その間の経由順はGoogleマップのoptimize:trueに任せて最短になるよう
-// 　自動調整する。実際にその場にいて、今から回る時向け。
+// 　経由地はリストの並び順のまま案内する。現在地からの巡回順を自動で
+// 　最適化する仕組みは、GoogleマップのURL版「ルート」（dir/?api=1）には
+// 　存在しない（optimize:trueはDirections API／JS版DirectionsServiceだけの
+// 　機能で、このURL方式に渡しても認識されず、逆に「optimize:true」という
+// 　文字列がそのまま1つ目の経由地の検索欄に入ってしまう不具合になる）ため、
+// 　ここでは行わない。到着後、Googleマップ側の画面で順番をドラッグして
+// 　変更することはできる。実際にその場にいて、今から回る時向け。
 // Googleマップの経由地URLには上限（出発地・目的地を含め合計25地点程度）が
 // あるため、超える場合は先頭から25件に切り詰めてトーストで知らせる。
 const GMAPS_ROUTE_MAX_STOPS = 25;
@@ -2915,7 +2920,7 @@ function openRouteOriginConfirmModal(stops){
       </button>
       <button type="button" class="route-origin-option" id="route-origin-yes">
         <span class="route-origin-option-title">現在地から最短で</span>
-        <span class="route-origin-option-desc">現在地を出発点にし、最後の地点（目的地）までの経由順を、Googleマップ側で最短になるよう自動調整します。</span>
+        <span class="route-origin-option-desc">現在地を出発点にし、最後の地点を目的地にします。経由地は現在の並び順のまま案内されます（Googleマップの画面上で、後から順番をドラッグして変更することもできます）。</span>
       </button>
       <button type="button" class="route-origin-option" id="route-origin-pick">
         <span class="route-origin-option-title">出発地・目的地を自分で指定する</span>
@@ -2938,9 +2943,12 @@ function openRouteOriginConfirmModal(stops){
 // 出発地・目的地を地点一覧から自分で選ぶモーダル。◎（出発地）○（目的地）は
 // それぞれ1つだけ選べる排他選択（同じ地点を両方に選ぶことはできない＝片方を
 // 選ぶと、その地点がもう片方に入っていた場合は自動的に外れる）。残りの地点は
-// すべて経由地となり、巡回順はGoogleマップのoptimize:trueに任せて自動調整する
-// （並び替えの手間を増やさないための割り切り。厳密な順番を指定したい場合は
-// 従来通りリストの並び順＝「いいえ」を使ってもらう）。
+// すべて経由地となる。出発地が実在の地点（＝座標が分かっている）なら、その
+// 地点から近い順に並べ替えてから渡す（orderStopsNearestNeighbor。最短順の
+// 厳密解ではなく簡易な近似）。出発地が「現在地」の場合は、その場で位置情報を
+// 取得して並べ替えようとすると、ポップアップブロックに引っかかりやすい
+// （非同期処理を挟んだ後のwindow.openはブラウザに弾かれることがある）ため、
+// あえて並べ替えず、経由地一覧の並び順のまま渡す。
 function openRoutePickStopsModal(stops){
   let originId = null;
   let destId = null;
@@ -2998,10 +3006,14 @@ function openRoutePickStopsModal(stops){
     const summaryEl = document.getElementById('route-pick-summary');
     const goBtn = document.getElementById('route-pick-go');
     if(summaryEl){
-      const originName = !originId ? '（未選択）' : (originId===ROUTE_CURRENT_LOCATION_ID ? '現在地' : DATA[originId].name);
+      const originIsCurrentLocation = originId===ROUTE_CURRENT_LOCATION_ID;
+      const originName = !originId ? '（未選択）' : (originIsCurrentLocation ? '現在地' : DATA[originId].name);
       const destName = destId ? DATA[destId].name : '（未選択）';
       const waypointCount = stops.filter(e=>e.id!==originId && e.id!==destId && waypointIncluded.has(e.id)).length;
-      summaryEl.innerHTML = `出発地：<strong>${escapeHtml(originName)}</strong>　→　経由地：${waypointCount}件（Googleマップが最短順に自動調整）　→　目的地：<strong>${escapeHtml(destName)}</strong>`;
+      // 出発地が実在の地点なら出発地からの近い順に自動で並べ替えるが、「現在地」の
+      // 場合はその場では並べ替えられない（openGoogleMapsRouteCustom側のコメント参照）。
+      const orderNote = originIsCurrentLocation ? '選んだ順のまま案内されます' : '出発地から近い順に自動で並べ替えます';
+      summaryEl.innerHTML = `出発地：<strong>${escapeHtml(originName)}</strong>　→　経由地：${waypointCount}件（${orderNote}）　→　目的地：<strong>${escapeHtml(destName)}</strong>`;
     }
     if(goBtn) goBtn.disabled = !(originId && destId);
   };
@@ -3028,18 +3040,84 @@ function openRoutePickStopsModal(stops){
     openGoogleMapsRouteCustom(stops, originId, destId, waypointIncluded);
   });
 }
-// useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに、
-// trueなら出発地を指定せず（＝Googleマップ側で現在地を使う）、末尾だけを
-// 目的地に固定してwaypoints=optimize:trueで経由順を最短に自動調整させる。
+// ---------- 経由地の並び替え（近い順の簡易最適化） ----------
+// GoogleマップのURL版「ルート」（https://www.google.com/maps/dir/?api=1）は、
+// Directions API・JS版DirectionsServiceにあるoptimizeWaypoints（俗に
+// waypoints=optimize:true|... と書けば効くと誤解されがちな機能）に対応していない。
+// 実際にoptimize:true|lat,lngのように渡すと、Googleマップ側はパイプ区切りの
+// 1つ目の要素をただの地名テキストとして扱い、「optimize:true」という文字列が
+// そのまま1つ目の経由地の検索欄に入力された状態で開いてしまう（＝ルートが
+// 組めない）。そのため経由地の並び替えは、出発地の座標が分かっている場合に限り
+// こちら側で行ってから、プレーンな lat,lng|lat,lng|... の形でURLに渡す。
+// 参考：https://developers.google.com/maps/documentation/urls/get-started
+function haversineKm(a, b){
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[0]-a[0]);
+  const dLng = toRad(b[1]-a[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+// 巡回セールスマン問題の厳密解ではなく、「今いる場所から一番近い未訪問地点へ」を
+// 繰り返す最近傍法という簡易な近似。地点数（最大25件程度）を考えれば十分実用的。
+function orderStopsNearestNeighbor(startCoords, stopsArr){
+  const remaining = stopsArr.slice();
+  const ordered = [];
+  let current = startCoords;
+  while(remaining.length){
+    let bestIdx = 0, bestDist = Infinity;
+    remaining.forEach((s,i)=>{
+      const d = haversineKm(current, s.coords);
+      if(d < bestDist){ bestDist = d; bestIdx = i; }
+    });
+    const next = remaining.splice(bestIdx, 1)[0];
+    ordered.push(next);
+    current = next.coords;
+  }
+  return ordered;
+}
+// Googleマップの経由地URL（waypoints）には、公式ドキュメント上の上限がある：
+// モバイルブラウザでは3件、それ以外（デスクトップブラウザ等）では9件まで
+// （出発地・目的地は含まない、中間の経由地だけの件数）。超えて渡すと表示が
+// 崩れる／一部の経由地が無視されるおそれがあるため、URLを組み立てる直前に
+// 必ずこの上限まで切り詰める。GMAPS_ROUTE_MAX_STOPS（25）はあくまで「そもそも
+// ピックアップ画面に何件出すか」というアプリ側のゆるい上限で、実際にGoogleマップへ
+// 渡せる経由地数はここでさらに絞り込む。
+// 参考：https://developers.google.com/maps/documentation/urls/get-started
+function isLikelyMobileBrowser(){
+  if(navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean'){
+    return navigator.userAgentData.mobile;
+  }
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+function gmapsWaypointLimit(){
+  return isLikelyMobileBrowser() ? 3 : 9;
+}
+// 並べ替え済みの経由地配列を、実際にURLへ渡せる件数まで切り詰める。並べ替え後
+// なので、先頭から取れば「出発地から近い順に上限件数まで」を自然に残せる
+// （現在地が出発地で並べ替えていない場合は、渡された順の先頭からになる）。
+function capWaypointsForGoogleMaps(orderedWaypoints){
+  const limit = gmapsWaypointLimit();
+  if(orderedWaypoints.length <= limit) return orderedWaypoints;
+  showToast(`お使いの環境ではGoogleマップの経由地は最大${limit}件までのため、近い順に先頭${limit}件だけを経由地にしています。`);
+  return orderedWaypoints.slice(0, limit);
+}
+// useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに。
+// trueなら出発地を指定せず（＝Googleマップ側で現在地を使う）、末尾だけを目的地に
+// 固定する。この場合、出発地点（＝実際の現在地）がこちらのJSからは分からないため
+// 経由地の並べ替えはできず、渡された順のまま案内する（コメント末尾を参照）。
 function openGoogleMapsRoute(stops, useCurrentLocation){
   const destination = stops[stops.length-1].coords;
   let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${destination.join(',')}`;
   if(useCurrentLocation){
-    const waypoints = stops.slice(0, -1).map(e=>e.coords.join(',')).join('|');
-    if(waypoints) url += `&waypoints=${encodeURIComponent('optimize:true|'+waypoints)}`;
+    const capped = capWaypointsForGoogleMaps(stops.slice(0, -1));
+    const waypoints = capped.map(e=>e.coords.join(',')).join('|');
+    if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
   } else {
     url += `&origin=${stops[0].coords.join(',')}`;
-    const waypoints = stops.slice(1, -1).map(e=>e.coords.join(',')).join('|');
+    const ordered = orderStopsNearestNeighbor(stops[0].coords, stops.slice(1, -1));
+    const capped = capWaypointsForGoogleMaps(ordered);
+    const waypoints = capped.map(e=>e.coords.join(',')).join('|');
     if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
   }
   showToast('Googleマップを開いています…');
@@ -3048,12 +3126,11 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
 // 出発地・目的地を自分で指定するモーダル（openRoutePickStopsModal）専用。
 // waypointIncludedIds（Setまたは配列。経由地チェックボックスがONの地点id）に
 // 入っている地点だけを経由地として使う。出発地・目的地以外で除外された地点は
-// 今回のルートに一切含めない。経由地の巡回順はoptimize:trueでGoogleマップに
-// 任せる（ユーザーが選んだのは「どこから」「どこへ」「何を回るか」だけで、
-// 途中の順番までは指定していないため）。originIdがROUTE_CURRENT_LOCATION_ID
-// （「現在地」）の場合はorigin座標を持たないので、URLに&origin=を含めず
-// Googleマップ側の現在地を使わせる（openGoogleMapsRouteのuseCurrentLocation=true
-// と同じ考え方）。
+// 今回のルートに一切含めない。出発地が実在の地点（座標が分かっている）なら、
+// そこから近い順にorderStopsNearestNeighborで並べ替える。originIdが
+// ROUTE_CURRENT_LOCATION_ID（「現在地」）の場合は、その座標がJS側からは分から
+// ないため並べ替えは行わず、URLに&origin=も含めずGoogleマップ側の現在地を
+// 使わせる（openGoogleMapsRouteのuseCurrentLocation=trueと同じ考え方）。
 function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds){
   const useCurrentLocation = originId === ROUTE_CURRENT_LOCATION_ID;
   const origin = useCurrentLocation ? null : stops.find(e=>e.id===originId);
@@ -3062,8 +3139,11 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds)
   const includedSet = waypointIncludedIds instanceof Set ? waypointIncludedIds : new Set(waypointIncludedIds||[]);
   let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${dest.coords.join(',')}`;
   if(!useCurrentLocation) url += `&origin=${origin.coords.join(',')}`;
-  const waypoints = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id)).map(e=>e.coords.join(',')).join('|');
-  if(waypoints) url += `&waypoints=${encodeURIComponent('optimize:true|'+waypoints)}`;
+  const toVisit = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id));
+  const orderedWaypoints = useCurrentLocation ? toVisit : orderStopsNearestNeighbor(origin.coords, toVisit);
+  const cappedWaypoints = capWaypointsForGoogleMaps(orderedWaypoints);
+  const waypoints = cappedWaypoints.map(e=>e.coords.join(',')).join('|');
+  if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
   showToast('Googleマップを開いています…');
   window.open(url, '_blank', 'noopener,noreferrer');
 }
