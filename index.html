@@ -3421,7 +3421,7 @@ function openEntityModal(prefill){
     <div class="field"><label>説明文</label><textarea id="f-desc"></textarea><div class="hint">他の項目名を <code>[[ホームズ]]</code> のように二重角括弧で囲むと、自動でリンクになります（表示を変えたい場合は <code>[[holmes|彼]]</code> のように｜で区切って指定。全角の <code>［［ ］］｜</code> で書いても構いません）。</div></div>
     ${renderImageField(null)}
     <div class="field"><label>関連付ける項目（任意）</label><div class="checklist">${relatedChecklist(null)}</div></div>
-    <div class="modal-actions"><button class="modal-cancel" id="f-cancel">キャンセル</button><button class="modal-submit" id="f-submit">追加する</button></div>`;
+    <div class="modal-actions"><button class="modal-cancel" id="f-cancel">キャンセル</button><button class="modal-cancel" id="f-save-draft">一時保存</button><button class="modal-submit" id="f-submit">追加して送信</button></div>`;
   overlay.classList.add('open');
   const typeSelect = document.getElementById('f-type');
   const locField = document.getElementById('f-location-field');
@@ -3435,18 +3435,27 @@ function openEntityModal(prefill){
   sync();
   wireImageUpload('f-image-file','f-image-preview', d=>uploadedImageData=d);
   const newEntityDraftFields = ['f-type','f-name','f-desc','f-image','f-image-credit','f-image-license','f-image-source','f-lat','f-lng','f-relevance','f-canon'];
+  // ★編集画面（openEditModal）と同様、「復元する／破棄する」のバナーは廃止し、
+  // 一時保存の内容があればバナーなしでそのままフォームに反映する形に単純化した。
   const newEntityDraft = loadDraft('newEntity', 'new');
   if(newEntityDraft){
-    insertDraftBanner('.modal-sub', newEntityDraft, ()=>{
-      applyDraftFields(newEntityDraft.data, newEntityDraftFields);
-      sync();
-    }, ()=>clearDraft('newEntity', 'new'));
+    applyDraftFields(newEntityDraft.data, newEntityDraftFields);
+    sync();
   }
   wireDraftAutosave('newEntity', 'new', newEntityDraftFields);
   typeSelect.addEventListener('change', ()=>saveDraft('newEntity', 'new', newEntityDraftFields.reduce((acc,fid)=>{ const el=document.getElementById(fid); if(el) acc[fid]=el.value; return acc; }, {})));
   wireGeoSearchButton(true);
   wireMapPickButton();
   document.getElementById('f-cancel').addEventListener('click', closeModal);
+  document.getElementById('f-save-draft').addEventListener('click', ()=>{
+    const data = {};
+    newEntityDraftFields.forEach(fid=>{
+      const el = document.getElementById(fid);
+      if(el) data[fid] = el.value;
+    });
+    saveDraft('newEntity', 'new', data);
+    showToast('この内容を一時保存しました（この端末にのみ残ります。まだ送信はされていません）。');
+  });
   document.getElementById('f-submit').addEventListener('click', async ()=>{
     if(!currentUser){ showToast('投稿にはログインが必要です。'); return; }
     const name = document.getElementById('f-name').value.trim();
@@ -3525,11 +3534,14 @@ function openEditModal(targetId){
   overlay.classList.add('open');
   wireImageUpload('f-image-file','f-image-preview', d=>uploadedImageData=d);
   const editEntityDraftFields = ['f-name','f-desc','f-image','f-image-credit','f-image-license','f-image-source'].concat(e.type==='place' ? ['f-lat','f-lng','f-relevance'] : []);
+  // ★以前は「下書きが残っています［復元する／破棄する］」というバナーを出して
+  // 選ばせていたが、明示的な「一時保存」ボタンを用意したことでその一手間が不要に
+  // なったため、一時保存されている内容があればバナーなしでそのままフォームに
+  // 出す形に単純化した（説明ページ側＝保存済みの公開データには一切触れない。
+  // あくまでこの編集フォームの入力欄だけを、前回の一時保存の状態に戻すだけ）。
   const editEntityDraft = loadDraft('editEntity', targetId);
   if(editEntityDraft){
-    insertDraftBanner('.modal-sub', editEntityDraft, ()=>{
-      applyDraftFields(editEntityDraft.data, editEntityDraftFields);
-    }, ()=>clearDraft('editEntity', targetId));
+    applyDraftFields(editEntityDraft.data, editEntityDraftFields);
   }
   wireDraftAutosave('editEntity', targetId, editEntityDraftFields);
   if(e.type==='place'){
@@ -4191,7 +4203,7 @@ function openJournalModal(prefill){
       </div>
       <div class="hint">${isPlaceKind ? '「自分だけ」を選ぶと他の会員には見えない個人的な記録になります（いいね・返信はできません）。' : '「自分だけ」を選ぶと他の会員には見えない個人的なメモになります。'}</div>
     </div>
-    <div class="modal-actions"><button class="modal-cancel" id="j-cancel">キャンセル</button><button class="modal-submit" id="j-submit">保存する</button></div>`;
+    <div class="modal-actions"><button class="modal-cancel" id="j-cancel">キャンセル</button><button class="modal-cancel" id="j-save-draft">一時保存</button><button class="modal-submit" id="j-submit">保存する</button></div>`;
   overlay.classList.add('open');
   wireImageUpload('j-image-file','j-image-preview', d=>uploadedImageData=d);
   let visibility = 'public';
@@ -4210,12 +4222,12 @@ function openJournalModal(prefill){
       ));
     });
   });
+  // ★編集画面（openEditModal）と同様、「復元する／破棄する」のバナーは廃止し、
+  // 一時保存の内容があればバナーなしでそのままフォームに反映する形に単純化した。
   const journalDraft = loadDraft('journal', journalDraftId);
   if(journalDraft){
-    insertDraftBanner('.modal-sub', journalDraft, ()=>{
-      applyDraftFields(journalDraft.data, journalDraftFields);
-      if(journalDraft.data.visibility) setVisibility(journalDraft.data.visibility);
-    }, ()=>clearDraft('journal', journalDraftId));
+    applyDraftFields(journalDraft.data, journalDraftFields);
+    if(journalDraft.data.visibility) setVisibility(journalDraft.data.visibility);
   }
   wireDraftAutosave('journal', journalDraftId, journalDraftFields, ()=>({visibility}));
   if(!prefill.entityId){
@@ -4241,6 +4253,15 @@ function openJournalModal(prefill){
     });
   }
   document.getElementById('j-cancel').addEventListener('click', closeModal);
+  document.getElementById('j-save-draft').addEventListener('click', ()=>{
+    const data = {visibility};
+    journalDraftFields.forEach(fid=>{
+      const el = document.getElementById(fid);
+      if(el) data[fid] = el.value;
+    });
+    saveDraft('journal', journalDraftId, data);
+    showToast('この内容を一時保存しました（この端末にのみ残ります。まだ投稿はされていません）。');
+  });
   document.getElementById('j-submit').addEventListener('click', async ()=>{
     if(!currentUser){ showToast('投稿にはログインが必要です。'); return; }
     const name = document.getElementById('j-name').value.trim();
