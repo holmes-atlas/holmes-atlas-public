@@ -24,6 +24,11 @@
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- お気に入りリストの🧭ルート表示ボタンがGoogleマップに遷移する際、接続確立
+     （DNS・TLS）だけでも先に済ませておくことで、実際に開くまでの体感時間を
+     わずかでも縮める狙い。ページ自体の読み込み・複数経由地のルート計算時間は
+     Googleマップ側の処理なのでここでは短縮できない。 -->
+<link rel="preconnect" href="https://www.google.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Crimson+Pro:wght@400;500;600&display=swap">
 <style>
 
@@ -315,8 +320,9 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .fav-list-count{color:var(--slate);font-size:.78rem;}
 .fav-list-row{display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .fav-list-row label{flex:1;min-width:0;}
-.fav-list-rename-btn{background:none;border:1px solid var(--line);color:var(--fog);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.72rem;flex:none;line-height:1;padding:0;}
-.fav-list-rename-btn:hover{border-color:var(--brass-light);color:var(--brass-light);}
+.fav-list-rename-btn,.fav-list-route-btn{background:none;border:1px solid var(--line);color:var(--fog);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.72rem;flex:none;line-height:1;padding:0;}
+.fav-list-rename-btn:hover,.fav-list-route-btn:hover{border-color:var(--brass-light);color:var(--brass-light);}
+.fav-subheader-actions{display:flex;align-items:center;gap:4px;flex:none;}
 .fav-list-rename-input{width:100%;font-size:.85rem;padding:2px 4px;border:1px solid var(--brass-light);border-radius:3px;box-sizing:border-box;}
 .badge-place{background:var(--brass);} .badge-person{background:var(--burgundy);}
 .badge-work{background:var(--teal);} .badge-term{background:var(--slate);}
@@ -2547,15 +2553,20 @@ function openRouteForFavoriteList(listId){
     showToast('ルートを表示するには地点が2つ以上必要です。');
     return;
   }
+  // トーストは1つしか同時表示できない仕組みなので、切り詰めた場合はその通知を
+  // 優先して出し（「開いています…」で上書きして見えなくなるのを防ぐ）、
+  // 切り詰めがない通常時だけ「開いています…」を出す。
+  let toastMsg = 'Googleマップを開いています…';
   if(stops.length > GMAPS_ROUTE_MAX_STOPS){
     stops = stops.slice(0, GMAPS_ROUTE_MAX_STOPS);
-    showToast(`地点数が多いため、先頭${GMAPS_ROUTE_MAX_STOPS}件でルートを作成しました。`);
+    toastMsg = `地点数が多いため、先頭${GMAPS_ROUTE_MAX_STOPS}件でルートを作成しました。`;
   }
   const origin = stops[0].coords;
   const destination = stops[stops.length-1].coords;
   const waypoints = stops.slice(1, -1).map(e=>e.coords.join(',')).join('|');
   let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${origin.join(',')}&destination=${destination.join(',')}`;
   if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  showToast(toastMsg);
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 const favFilterBtn = document.getElementById('favFilterBtn');
@@ -2901,7 +2912,10 @@ function renderIndex(){
         anyListShown = true;
         html += `<div class="fav-subheader-row">
           <span class="fav-subheader"><span class="fav-index-name" data-fav-index-name="${list.id}">${escapeHtml(list.name)}</span><span class="fav-list-count">（${items.length}）</span></span>
-          <button type="button" class="fav-list-rename-btn" data-fav-rename-index="${list.id}" title="リスト名を変更" aria-label="リスト名を変更">✏️</button>
+          <span class="fav-subheader-actions">
+            <button type="button" class="fav-list-route-btn" data-route-list-index="${list.id}" title="このリストの地点をGoogleマップでルート表示" aria-label="このリストの地点をGoogleマップでルート表示">🧭</button>
+            <button type="button" class="fav-list-rename-btn" data-fav-rename-index="${list.id}" title="リスト名を変更" aria-label="リスト名を変更">✏️</button>
+          </span>
         </div>`;
         items.forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
       });
@@ -2999,6 +3013,15 @@ function renderIndex(){
       ev.preventDefault();
       ev.stopPropagation();
       openFavoriteListEditModal(btn.dataset.favRenameIndex);
+    });
+  });
+  // お気に入り表示の絞り込みメニュー（favFilterMenu）にある🧭ボタンと全く同じ関数を
+  // そのまま呼ぶ。索引側からも同じルート表示を使えるようにする窓口。
+  scrollEl.querySelectorAll('.fav-list-route-btn[data-route-list-index]').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      openRouteForFavoriteList(btn.dataset.routeListIndex);
     });
   });
 }
@@ -4412,6 +4435,8 @@ function openJournalModal(prefill){
       <label>位置を検索する（任意）</label>
       <div class="geo-row"><input type="text" id="j-geo-query" placeholder="地名で検索"><button type="button" class="geo-search-btn" id="j-geo-search">検索</button></div>
       <div class="geo-results" id="j-geo-results"></div>
+      <button type="button" class="geo-search-btn geo-map-pick-btn" id="j-geo-map-pick">🗺 地図で指定する</button>
+      <div class="hint" id="j-geo-picked" style="display:${coords?'block':'none'};">${coords?`座標を設定しました（${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}）`:''}</div>
     </div>` : ''}
     <div class="field"><label>${isPlaceKind ? '訪問日（任意）' : '日付（任意）'}</label><input type="date" id="j-date"></div>
     <div class="field"><label>コメント</label><textarea id="j-comment" placeholder="感想や発見したことなど"></textarea></div>
@@ -4472,8 +4497,24 @@ function openJournalModal(prefill){
           coords = [parseFloat(r.lat), parseFloat(r.lon)];
           const nameEl = document.getElementById('j-name');
           if(!nameEl.value.trim()) nameEl.value = r.display_name.split(/、|,/)[0];
+          const pickedEl = document.getElementById('j-geo-picked');
+          if(pickedEl){ pickedEl.style.display='none'; pickedEl.textContent=''; } // 地図クリック由来の表示は検索確定でクリア
           showToast('位置情報を設定しました。');
         });
+      });
+    });
+    // 「地図で指定する」：openEntityModal/openEditModalと同じpickLocationOnMapを
+    // そのまま流用。モーダルを一時的に隠して地図を露出させ、クリックした地点を
+    // coordsに反映する（入力途中のコメントなどはモーダルのDOMごと保持されるため消えない）。
+    document.getElementById('j-geo-map-pick').addEventListener('click', ()=>{
+      pickLocationOnMap(latlng=>{
+        coords = [latlng.lat, latlng.lng];
+        const pickedEl = document.getElementById('j-geo-picked');
+        if(pickedEl){
+          pickedEl.style.display = 'block';
+          pickedEl.textContent = `座標を設定しました（${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}）`;
+        }
+        showToast('地図上の地点を設定しました。');
       });
     });
   }
