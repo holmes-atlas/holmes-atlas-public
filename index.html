@@ -457,6 +457,18 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .map-jump-name-popup .leaflet-popup-content-wrapper{background:var(--ink-2);color:var(--fog);border:1px solid var(--brass);border-radius:4px;}
 .map-jump-name-popup .leaflet-popup-tip{background:var(--ink-2);border:1px solid var(--brass);}
 .map-jump-name-popup .leaflet-popup-content{margin:9px 14px;font-weight:600;font-size:.92rem;}
+/* 地名ピンをタップした時の小さいプレビューカード（タップで詳細ページへ） */
+.pin-preview-popup .leaflet-popup-content-wrapper{background:var(--ink-2);color:var(--fog);border:1px solid var(--brass);border-radius:6px;padding:0;overflow:hidden;}
+.pin-preview-popup .leaflet-popup-content{margin:0;width:212px !important;}
+.pin-preview-popup .leaflet-popup-tip{background:var(--ink-2);border:1px solid var(--brass);}
+.pin-preview-popup .leaflet-popup-close-button{color:var(--fog) !important;opacity:.75;}
+.pin-preview-popup .leaflet-popup-close-button:hover{opacity:1;}
+.pin-preview-card{cursor:pointer;}
+.pin-preview-img{display:block;width:100%;height:104px;object-fit:cover;}
+.pin-preview-body{padding:10px 12px 11px;}
+.pin-preview-name{font-family:'Playfair Display',serif;font-size:.96rem;color:var(--fog);margin:0 0 4px;line-height:1.32;}
+.pin-preview-desc{font-size:.74rem;color:var(--slate);line-height:1.5;margin:0 0 7px;}
+.pin-preview-more{font-size:.72rem;color:var(--brass-light);font-weight:600;}
 
 @media (max-width:760px){
   .app{grid-template-columns:1fr;grid-template-rows:56px 1fr;}
@@ -2477,6 +2489,47 @@ function labelDirectionFor(id){
   for(let i=0;i<id.length;i++){ hash = (hash*31 + id.charCodeAt(i)) >>> 0; }
   return dirs[hash % dirs.length];
 }
+// リンク構文 [[id|表示名]] が混ざった説明文から、ピンのプレビューカード用に
+// 短いプレーンテキストの抜粋を作る（表示名だけ残し、角括弧やIDは見せない）。
+function stripLinkSyntaxForSnippet(desc){
+  const regex = /[\[［]{2}([^\]］|｜]+?)(?:[|｜]([^\]］]+?))?[\]］]{2}/g;
+  return (desc||'').replace(regex, (full, token, display) => (display ? display : token).trim());
+}
+function pinPopupSnippet(desc, maxLen){
+  const plain = stripLinkSyntaxForSnippet(desc).replace(/\s+/g, ' ').trim();
+  return plain.length > maxLen ? plain.slice(0, maxLen) + '…' : plain;
+}
+// 地名ピンをタップした時に出す小さいプレビューカード。カード自体をタップすると
+// 詳細ページ（showEntity）に遷移する（クリック処理はopenPlacePreviewPopup側で、
+// ポップアップのDOMに直接リスナーを付ける形で行っている）。
+function renderPinPreviewPopupHtml(e, id){
+  const imgUrl = (e.photos && e.photos.length && e.photos[0].url) ? e.photos[0].url : e.image;
+  const snippet = pinPopupSnippet(e.desc, 46);
+  return `<div class="pin-preview-card" data-popup-open="${id}">
+    ${imgUrl ? `<img class="pin-preview-img" src="${escapeAttr(imgUrl)}" alt="" loading="lazy">` : ''}
+    <div class="pin-preview-body">
+      <div class="pin-preview-name">${escapeHtml(e.name)}</div>
+      ${snippet ? `<div class="pin-preview-desc">${escapeHtml(snippet)}</div>` : ''}
+      <div class="pin-preview-more">詳細を見る ›</div>
+    </div>
+  </div>`;
+}
+function openPlacePreviewPopup(id){
+  const e = DATA[id];
+  if(!e || !e.coords) return;
+  map.closePopup();
+  const popup = L.popup({closeButton:true, className:'pin-preview-popup', offset:[0,-6], autoPanPadding:[20,20]})
+    .setLatLng(e.coords)
+    .setContent(renderPinPreviewPopupHtml(e, id))
+    .openOn(map);
+  // LeafletのポップアップはdisableClickPropagationでクリックの伝播をポップアップ自身の
+  // 要素で止めているため、documentへのイベント委譲では拾えない。ポップアップのDOMに
+  // 直接リスナーを付ける。
+  popup.getElement()?.querySelector('[data-popup-open]')?.addEventListener('click', ()=>{
+    map.closePopup();
+    showEntity(id);
+  });
+}
 function renderMarkers(){
   markerClusterGroup.clearLayers();
   Object.values(markers).forEach(m=>{ if(map.hasLayer(m)) map.removeLayer(m); });
@@ -2491,7 +2544,7 @@ function renderMarkers(){
       const m = L.marker(e.coords,{icon, zIndexOffset: isSpecial ? 2000 : 0});
       m.entityName = e.name;
       m.entityId = id;
-      m.on('click', ()=>{ if(mapPickModeActive) return; showEntity(id); });
+      m.on('click', ()=>{ if(mapPickModeActive) return; openPlacePreviewPopup(id); });
       if(isSpecial){
         m.bindTooltip(e.name,{direction:'right',offset:[12,0],permanent:true,className:'place-label-special'});
         m.on('mouseover', ()=>{ m.getTooltip()?.getElement()?.classList.add('force-show'); });
