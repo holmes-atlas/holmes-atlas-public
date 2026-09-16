@@ -109,7 +109,11 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .map-search{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:600;width:min(380px,82%);}
 .stage:has(.panel.open, .timeline.open) .map-search,
 .stage:has(.panel.open, .timeline.open) .map-controls-cluster,
-.stage:has(.panel.open, .timeline.open) .map-status{display:none;}
+.stage:has(.panel.open, .timeline.open) .map-status,
+.stage:has(.panel.open, .timeline.open) .map-locate-btn,
+.stage:has(.panel.open, .timeline.open) .map-door-btn,
+.stage:has(.panel.open, .timeline.open) .nearby-panel,
+.stage:has(.panel.open, .timeline.open) .route-cart-bar{display:none;}
 .map-search-row{display:flex;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.25);border-radius:3px;}
 .map-search-row input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:3px 0 0 3px;font-size:.9rem;background:#fff;color:var(--charcoal);}
 .map-search-row button{background:var(--brass);border:none;color:#fff;padding:0 16px;border-radius:0;cursor:pointer;font-size:.85rem;}
