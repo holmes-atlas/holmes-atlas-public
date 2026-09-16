@@ -2347,10 +2347,15 @@ document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeWorkFilt
 window.addEventListener('resize', closeWorkFilterMenu);
 document.getElementById('mapControlsCluster').addEventListener('scroll', closeWorkFilterMenu);
 
-// 221Bへの直行ボタン。「一発で飛べる」ようにしたいとのことなので、地図を動かすだけの
-// goToMap()ではなく、showEntity()で説明ページまで一気に開く
+// 221Bへの直行ボタン。地図をベーカー街221Bへ移動させつつ、地名ピンをタップした時と
+// 同じ小さいプレビューカードを開く（フルの詳細パネルはカードをタップした時だけ開く）。
 document.getElementById('bakerStreetBtn').addEventListener('click', ()=>{
-  showEntity('baker-street');
+  const id = 'baker-street';
+  panel.classList.remove('open');
+  document.getElementById('timeline').classList.remove('open');
+  document.getElementById('myBook').classList.remove('open');
+  map.flyTo(DATA[id].coords, zoomForEntity(id), {duration:0.7});
+  openPlacePreviewPopup(id);
 });
 
 function fixMapSize(){ map.invalidateSize(); }
