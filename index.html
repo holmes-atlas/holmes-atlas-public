@@ -2918,43 +2918,13 @@ function renderIndex(){
   // 索引の★お気に入り内、各フォルダ（お気に入りリスト）見出しの✏️から、その場でリスト名を変更できる。
   // openFavoriteListsModal内の同種のリネームUIと同じ考え方（見出しのテキストをその場で
   // input要素に差し替え、Enter/フォーカス外れで確定・保存、Escapeでキャンセル）。
+  // ✏️は、その場でのリネームではなく「リストを編集」モーダル（名前の変更に加えて
+  // 中身の追加・削除もできる）を開く形にしている
   scrollEl.querySelectorAll('.fav-list-rename-btn[data-fav-rename-index]').forEach(btn=>{
     btn.addEventListener('click', (ev)=>{
       ev.preventDefault();
       ev.stopPropagation();
-      const listId = btn.dataset.favRenameIndex;
-      const list = favoriteLists.find(l=>l.id===listId);
-      if(!list) return;
-      const nameSpan = Array.from(scrollEl.querySelectorAll('.fav-index-name')).find(el=>el.dataset.favIndexName===listId);
-      if(!nameSpan || nameSpan.tagName === 'INPUT') return;
-      let done = false;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'fav-list-rename-input';
-      input.value = list.name;
-      nameSpan.replaceWith(input);
-      input.focus();
-      input.select();
-      const finish = async (save)=>{
-        if(done) return;
-        done = true;
-        if(save){
-          const newName = input.value.trim();
-          if(newName && newName !== list.name){
-            list.name = newName;
-            await safeSet(favoritesKey(), favoriteLists);
-            // 地図の絞り込みで今まさに選ばれているリストの名前が変わった場合は、
-            // 絞り込みボタンのラベルもその場で追従させる
-            if(favListFilter === listId) setFavFilterLabel(newName, true);
-          }
-        }
-        renderIndex();
-      };
-      input.addEventListener('keydown', (ev2)=>{
-        if(ev2.key==='Enter'){ ev2.preventDefault(); finish(true); }
-        else if(ev2.key==='Escape'){ ev2.preventDefault(); finish(false); }
-      });
-      input.addEventListener('blur', ()=>finish(true));
+      openFavoriteListEditModal(btn.dataset.favRenameIndex);
     });
   });
 }
@@ -3979,6 +3949,94 @@ function openFavoriteListsModal(entityId){
     showEntity(entityId, {fromTrail:true});
     renderIndex();
     openFavoriteListsModal(entityId);
+  });
+}
+
+// お気に入りリストそのものを編集するモーダル（索引の★お気に入り内、各フォルダの
+// ✏️から開く）。openFavoriteListsModalが「1つの項目を、どのリストに入れるか」を
+// 扱うのに対し、こちらは「1つのリストの、名前と中身（入っている項目）」をまとめて
+// 扱う。変更のたびに即座に保存し（別途「保存する」ボタンは用意しない）、モーダルは
+// 毎回作り直して最新の状態を映す。
+function openFavoriteListEditModal(listId){
+  const list = favoriteLists.find(l=>l.id===listId);
+  if(!list) return;
+  const itemsHtml = () => {
+    const items = list.entityIds.map(id=>({id, e:DATA[id]})).filter(x=>x.e);
+    items.sort((a,b)=>a.e.name.localeCompare(b.e.name,'ja'));
+    if(items.length===0) return '<div class="alias-list-empty">まだ何も入っていません。上の検索から追加できます。</div>';
+    return items.map(({id,e})=>`<div class="alias-list-item"><span><span class="dot dot-${entityClass(e)}"></span>${escapeHtml(e.name)}<span class="fav-list-count">（${entityLabel(e)}）</span></span><button type="button" class="alias-delete-btn" data-fle-remove="${id}" title="リストから外す" aria-label="リストから外す">×</button></div>`).join('');
+  };
+  modalBody.innerHTML = `
+    <h3>リストを編集</h3>
+    <div class="modal-sub">名前の変更や、入っている項目の追加・削除ができます。</div>
+    <div class="field">
+      <label>リスト名</label>
+      <input type="text" id="fle-name-input" value="${escapeAttr(list.name)}">
+    </div>
+    <div class="field">
+      <label>項目を追加</label>
+      <input type="text" id="fle-add-input" placeholder="地名・人物・作品などを検索" autocomplete="off">
+      <div class="map-search-results" id="fle-add-results"></div>
+    </div>
+    <div class="field">
+      <label>入っている項目（${list.entityIds.length}件）</label>
+      <div class="checklist" id="fle-item-list" style="max-height:240px;">${itemsHtml()}</div>
+    </div>
+    <div class="modal-actions"><button class="modal-cancel" id="fle-close-btn">確定</button></div>`;
+  overlay.classList.add('open');
+  document.getElementById('fle-close-btn').addEventListener('click', closeModal);
+
+  const nameInput = document.getElementById('fle-name-input');
+  const commitName = async ()=>{
+    const newName = nameInput.value.trim();
+    if(newName && newName !== list.name){
+      list.name = newName;
+      await safeSet(favoritesKey(), favoriteLists);
+      if(favListFilter === listId) setFavFilterLabel(newName, true);
+      renderIndex();
+    } else {
+      nameInput.value = list.name; // 空欄のまま外した場合などは、元の名前に戻す
+    }
+  };
+  nameInput.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); nameInput.blur(); } });
+  nameInput.addEventListener('blur', commitName);
+
+  document.querySelectorAll('#fle-item-list [data-fle-remove]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.fleRemove;
+      list.entityIds = list.entityIds.filter(x=>x!==id);
+      await safeSet(favoritesKey(), favoriteLists);
+      renderIndex();
+      if(favListFilter === listId) renderMarkers();
+      openFavoriteListEditModal(listId);
+    });
+  });
+
+  const addInput = document.getElementById('fle-add-input');
+  const addResults = document.getElementById('fle-add-results');
+  addInput.addEventListener('input', ()=>{
+    const q = addInput.value.trim();
+    if(!q){ addResults.classList.remove('show'); addResults.innerHTML=''; return; }
+    const matchIds = Object.keys(DATA)
+      .filter(id=>!list.entityIds.includes(id) && fuzzyMatch(DATA[id].name, q))
+      .slice(0, 8);
+    if(matchIds.length===0){
+      addResults.innerHTML = `<div class="map-search-section" style="background:none;">見つかりませんでした</div>`;
+      addResults.classList.add('show');
+      return;
+    }
+    addResults.innerHTML = matchIds.map(id=>`<button type="button" class="map-search-item" data-fle-add="${id}"><span class="dot dot-${entityClass(DATA[id])}"></span>${escapeHtml(DATA[id].name)}<span class="msi-sub">${entityLabel(DATA[id])}</span></button>`).join('');
+    addResults.classList.add('show');
+    addResults.querySelectorAll('[data-fle-add]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const id = btn.dataset.fleAdd;
+        if(!list.entityIds.includes(id)) list.entityIds.push(id);
+        await safeSet(favoritesKey(), favoriteLists);
+        renderIndex();
+        if(favListFilter === listId) renderMarkers();
+        openFavoriteListEditModal(listId);
+      });
+    });
   });
 }
 
