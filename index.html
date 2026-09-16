@@ -2311,6 +2311,10 @@ function openViewFilterMenu(){
   const wrap = document.getElementById('viewFilterWrap');
   const stage = document.querySelector('.stage');
   if(!btn || !menu || !stage) return;
+  // ★開くたびに作り直し、✓マーク（.active）を今のviewFilterValueに合わせて
+  // 必ず最新化する（クリックで選んだ直後は個々のボタンのDOMまでは書き換えていない
+  // ため、開き直したタイミングでここできちんと揃える）
+  populateViewFilterMenu();
   const br = btn.getBoundingClientRect();
   const sr = stage.getBoundingClientRect();
   menu.style.right = Math.max(8, sr.right - br.right) + 'px';
