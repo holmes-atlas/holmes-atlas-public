@@ -2763,9 +2763,9 @@ function renderJournalMarkers(){
 }
 
 // ---------- 索引 ----------
+// ★掲載には先方の許可を取ってから載せたいので、一旦0件にしてある。
+// 許可が取れたサイトから、下の配列に {name, url, desc} の形で追加していく。
 const EXTERNAL_LINKS = [
-  {name:"シャーロック・ホームズの世界", url:"https://shworld.fan.coocan.jp/", desc:"ロンドンの地区別詳細地図で知られる個人サイト"},
-  {name:"Sherlock Holmes Society of London", url:"https://www.sherlock-holmes.org.uk/", desc:"ロンドンのホームズ協会。独自のGazetteer（地名事典）を運営"},
 ];
 
 let indexOpenGroups = new Set();
@@ -2854,13 +2854,19 @@ function renderIndex(){
     html += `</div></div>`;
   });
   // 関連サイト（絞り込みの対象外。件数が少なく、常に見えていて困らないため）
+  // ★掲載サイトが0件の間も見出し自体は残す（許可取得中であることが分かるように）。
+  // 開いた時に中身が空っぽに見えて紛らわしくならないよう、0件の間だけ案内文を出す。
   const linksOpen = indexOpenGroups.has('links');
   html += `<div class="index-group">
     <button class="index-group-header" data-group="links"><span class="igh-arrow">${linksOpen?'▾':'▸'}</span>${sectionLabels.links}<span class="igh-count">${EXTERNAL_LINKS.length}</span></button>
     <div class="index-group-items" style="display:${linksOpen?'block':'none'}">`;
-  EXTERNAL_LINKS.forEach(l=>{
-    html += `<a class="index-item index-link-item" href="${escapeAttr(l.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(l.name)}<span class="index-link-desc">${escapeHtml(l.desc||'')}</span></a>`;
-  });
+  if(EXTERNAL_LINKS.length){
+    EXTERNAL_LINKS.forEach(l=>{
+      html += `<a class="index-item index-link-item" href="${escapeAttr(l.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(l.name)}<span class="index-link-desc">${escapeHtml(l.desc||'')}</span></a>`;
+    });
+  } else {
+    html += `<div class="alias-list-empty">掲載準備中です。</div>`;
+  }
   html += `</div></div>`;
 
   // 地名の言い換え辞書
