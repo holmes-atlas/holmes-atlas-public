@@ -2795,12 +2795,15 @@ function renderIndex(){
     html += `<div class="index-filter-empty">「${escapeHtml(q)}」に一致する項目が見つかりませんでした。</div>`;
   }
 
-  // お気に入り（ジャンル別。絞り込み中は該当する項目だけに絞られる）
-  const favByType = {place:[], person:[], work:[], 'work-pastiche':[], term:[]};
+  // お気に入り（リスト＝フォルダ別。絞り込み中は該当する項目だけに絞られる）
+  // ジャンル別ではなく、ユーザーが作った各お気に入りリストをそのまま「フォルダ」として
+  // 見出しにする。同じ項目が複数のリストに入っていれば、その分だけ複数のフォルダの下に
+  // 重複して現れる（チェックボックスで複数リストに追加できる仕様に対応するため）。
+  const favMatchedIds = new Set();
   ['place','person','work','work-pastiche','term'].forEach(t=>{
-    favByType[t] = groups[t].filter(id=>isInAnyFavoriteList(id));
+    groups[t].forEach(id=>{ if(isInAnyFavoriteList(id)) favMatchedIds.add(id); });
   });
-  const favTotal = Object.values(favByType).reduce((a,arr)=>a+arr.length, 0);
+  const favTotal = favMatchedIds.size;
   // 絞り込み中は、結果が見えるようそのジャンルを強制的に開いた状態で表示する
   const favOpen = q ? favTotal>0 : indexOpenGroups.has('favorites');
   if(!q || favTotal>0){
@@ -2810,11 +2813,27 @@ function renderIndex(){
     if(favTotal===0){
       html += `<div class="alias-list-empty">まだありません。項目を開いて☆お気に入りボタンで登録できます。</div>`;
     } else {
-      ['place','person','work','work-pastiche','term'].forEach(t=>{
-        if(favByType[t].length===0) return;
-        html += `<div class="fav-subheader">${sectionLabels[t]}</div>`;
-        favByType[t].forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
+      let anyListShown = false;
+      favoriteLists.forEach(list=>{
+        const items = list.entityIds.filter(id=>favMatchedIds.has(id)).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
+        if(items.length===0) return;
+        anyListShown = true;
+        html += `<div class="fav-subheader">${escapeHtml(list.name)}<span class="fav-list-count">（${items.length}）</span></div>`;
+        items.forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
       });
+      // リストに紐づかないのに favMatchedIds に入ることは通常起きないが、
+      // データ不整合などの保険として、どのフォルダにも表示されなかった項目があれば
+      // 最後に「その他」としてまとめて出す
+      const shown = new Set(favoriteLists.flatMap(l=>l.entityIds));
+      const leftover = Array.from(favMatchedIds).filter(id=>!shown.has(id)).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
+      if(leftover.length){
+        html += `<div class="fav-subheader">その他</div>`;
+        leftover.forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
+        anyListShown = true;
+      }
+      if(!anyListShown){
+        html += `<div class="alias-list-empty">まだありません。項目を開いて☆お気に入りボタンで登録できます。</div>`;
+      }
     }
     html += `</div></div>`;
   }
