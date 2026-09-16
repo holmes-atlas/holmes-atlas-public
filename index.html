@@ -542,19 +542,14 @@ body.map-picking .leaflet-container{cursor:crosshair;}
          まとめている。仕切り線と、オン状態の金色文字で「一つの計器盤」に見えるように
          し、221Bへだけは特別枠（バーガンディ色の小さなピル）として右端に残す。 -->
     <div class="map-controls-cluster" id="mapControlsCluster">
-      <button class="mt-seg" id="coreOnlyBtn" title="正典・パスティーシュ直結の地点だけ表示">
-        <svg class="mt-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5c3-1.5 6-1.5 8 0v14c-2-1.5-5-1.5-8 0V5Z"/><path d="M20 5c-3-1.5-6-1.5-8 0v14c2-1.5 5-1.5 8 0V5Z"/></svg>
-        <span>正典のみ</span>
-      </button>
-      <span class="mt-div"></span>
       <button class="mt-seg" id="historicToggleBtn" title="ホームズ時代の古地図（英国陸地測量部の1:10,560地形図、1888〜1913年にかけて測量）に切り替え">
         <svg class="mt-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z"/><path d="M9 4v14M15 6v14"/></svg>
         <span id="historicToggleLabel">古地図</span>
       </button>
       <span class="mt-div"></span>
-      <span class="mt-seg mt-select-wrap" id="workFilterWrap">
-        <button type="button" class="mt-select-btn" id="workFilterBtn" title="選んだ作品に登場する地点だけを地図に表示する" aria-haspopup="listbox" aria-expanded="false">
-          <span id="workFilterBtnLabel">作品選択</span>
+      <span class="mt-seg mt-select-wrap" id="viewFilterWrap">
+        <button type="button" class="mt-select-btn" id="viewFilterBtn" title="表示する地点を絞り込む（正典登場地のみ／特定の作品の登場地のみ）" aria-haspopup="listbox" aria-expanded="false">
+          <span id="viewFilterBtnLabel">表示絞り込み</span>
           <svg class="mt-ic mt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </span>
@@ -571,20 +566,20 @@ body.map-picking .leaflet-container{cursor:crosshair;}
         <span>名称表示</span>
       </button>
     </div>
-    <!-- 作品選択はネイティブの<select>をやめ、自前のボタン＋一覧に置き換えている。
-         ネイティブのselectはappearance:noneで見た目を消したつもりでも、スマホの
-         ブラウザによっては選択直後にブラウザ標準の明るい配色（白い枠）で
-         描き直してしまうことがあり、CSSだけでは機種差を潰しきれなかったため。
-         自前のボタン＋一覧なら、どの機種でも常にこちらの指定通りの見た目になる。
-         一覧（#workFilterMenu）は帯（.map-controls-cluster、横スクロールのため
-         overflow-x:autoにしている）の外に置き、帯の真上に浮かせて表示する
-         （帯の中に置くと、横スクロール用のoverflow設定に巻き込まれて
+    <!-- 表示絞り込み（旧「正典のみ」トグル＋「作品選択」）はネイティブの<select>をやめ、
+         自前のボタン＋一覧に置き換えている。ネイティブのselectはappearance:noneで
+         見た目を消したつもりでも、スマホのブラウザによっては選択直後にブラウザ標準の
+         明るい配色（白い枠）で描き直してしまうことがあり、CSSだけでは機種差を
+         潰しきれなかったため。自前のボタン＋一覧なら、どの機種でも常にこちらの
+         指定通りの見た目になる。一覧（#viewFilterMenu）は帯（.map-controls-cluster、
+         横スクロールのためoverflow-x:autoにしている）の外に置き、帯の真上に浮かせて
+         表示する（帯の中に置くと、横スクロール用のoverflow設定に巻き込まれて
          上にはみ出す部分が見えなくなってしまうため）。 -->
-    <div class="mt-select-menu" id="workFilterMenu" role="listbox"></div>
-    <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はworkFilterMenuと同じ）。 -->
+    <div class="mt-select-menu" id="viewFilterMenu" role="listbox"></div>
+    <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はviewFilterMenuと同じ）。 -->
     <div class="mt-select-menu" id="favFilterMenu" role="listbox"></div>
     <!-- 現在地ボタン・221Bへボタンは帯から独立させ、帯の真上に積み重ねた
-         浮きボタンにしている。こうすることで「正典のみ」「古地図」の文字ラベルを
+         浮きボタンにしている。こうすることで「表示絞り込み」「古地図」の文字ラベルを
          スマホでも消さずに残せる。221Bへは特別な項目への近道なので、これまで通り
          バーガンディ色のピルのまま、現在地ボタンのさらに上に置いている。 -->
     <button class="map-locate-btn" id="locateMapBtn" title="現在地から探す" aria-label="現在地から近い場所を探す">
@@ -2266,16 +2261,6 @@ historicToggleBtn.addEventListener('click', ()=>{
   }
 });
 
-const coreOnlyBtn = document.getElementById('coreOnlyBtn');
-coreOnlyBtn.addEventListener('click', ()=>{
-  coreOnlyFilter = !coreOnlyFilter;
-  // ラベルの文言は変えず（アイコンごと消えるtextContent差し替えはしない）、
-  // オンの間は文字色だけ金色に変える
-  coreOnlyBtn.classList.toggle('active', coreOnlyFilter);
-  renderMarkers();
-  renderIndex();
-});
-
 const labelForceBtn = document.getElementById('labelForceBtn');
 labelForceBtn.addEventListener('click', ()=>{
   forceShowLabels = !forceShowLabels;
@@ -2286,34 +2271,40 @@ labelForceBtn.addEventListener('click', ()=>{
   updateLabelVisibility();
 });
 
-// ---------- 作品（正典の話）ごとの地点絞り込み ----------
-// 「正典登場地のみ」の応用版。各地点データが持つrelated（関連項目）配列に
-// 選んだ作品のIDが含まれているかどうかで絞り込む。地点側のrelatedには
-// 元々「この場所はどの作品に登場するか」がタグ付けされているので、
-// 新しいデータ構造は増やさずそのまま流用できる。
+// ---------- 表示絞り込み（全ての地点／全ての正典登場地／作品ごと） ----------
+// 以前は「正典のみ」トグルボタンと「作品選択」プルダウンの2つに分かれていたが、
+// 実質的には「全ての地点を見せる」「正典・パスティーシュ直結の地点だけ見せる」
+// 「特定の作品に登場する地点だけ見せる」という、互いに排他な3種類の見せ方の
+// 切り替えでしかなかったため、1つの選択式ボタン（表示絞り込み）に統合した。
+// 内部の状態は旧来のまま2つ（workFilter＝選んだ作品のID、coreOnlyFilter＝
+// 正典のみかどうか）を使い続けているが（renderMarkers/renderIndex側は変更不要）、
+// この選択メニューの側で「常にどちらか一方だけが有効になる」よう排他制御する。
+// coreOnlyFilター自体の宣言は、renderMarkers/renderIndexに近い場所に残してある
+// （このブロックより後で宣言されるが、実際に参照されるのはユーザー操作後、
+// つまりスクリプト全体の読み込みが終わったあとなので問題ない）。
 let workFilter = null;
-// workFilterValueは表示上の「今選ばれている項目」を覚えておくための値。
-// ''＝まだ何も選んでいない（プレースホルダー「作品選択」のまま）、
-// '__all__'＝「全作品表示」を選んだ、それ以外＝選んだ作品のID。
-let workFilterValue = '';
-function setWorkFilterLabel(text, active){
-  const label = document.getElementById('workFilterBtnLabel');
+// viewFilterValueは表示上の「今選ばれている項目」を覚えておくための値。
+// ''＝「全ての地点」（絞り込みなし）、'__core__'＝「全ての正典登場地」、
+// それ以外＝選んだ作品のID。
+let viewFilterValue = '';
+function setViewFilterLabel(text, active){
+  const label = document.getElementById('viewFilterBtnLabel');
   if(label) label.textContent = text;
-  const btn = document.getElementById('workFilterBtn');
+  const btn = document.getElementById('viewFilterBtn');
   if(btn) btn.classList.toggle('active', !!active);
 }
-function closeWorkFilterMenu(){
-  const menu = document.getElementById('workFilterMenu');
-  const wrap = document.getElementById('workFilterWrap');
-  const btn = document.getElementById('workFilterBtn');
+function closeViewFilterMenu(){
+  const menu = document.getElementById('viewFilterMenu');
+  const wrap = document.getElementById('viewFilterWrap');
+  const btn = document.getElementById('viewFilterBtn');
   if(menu) menu.classList.remove('show');
   if(wrap) wrap.classList.remove('open');
   if(btn) btn.setAttribute('aria-expanded','false');
 }
-function openWorkFilterMenu(){
-  const btn = document.getElementById('workFilterBtn');
-  const menu = document.getElementById('workFilterMenu');
-  const wrap = document.getElementById('workFilterWrap');
+function openViewFilterMenu(){
+  const btn = document.getElementById('viewFilterBtn');
+  const menu = document.getElementById('viewFilterMenu');
+  const wrap = document.getElementById('viewFilterWrap');
   const stage = document.querySelector('.stage');
   if(!btn || !menu || !stage) return;
   const br = btn.getBoundingClientRect();
@@ -2324,11 +2315,20 @@ function openWorkFilterMenu(){
   wrap.classList.add('open');
   btn.setAttribute('aria-expanded','true');
 }
-function selectWorkFilter(value, label){
-  workFilterValue = value;
-  workFilter = (value && value !== '__all__') ? value : null;
-  setWorkFilterLabel(label, !!workFilter);
-  closeWorkFilterMenu();
+function selectViewFilter(value, label){
+  viewFilterValue = value;
+  if(value === '__core__'){
+    coreOnlyFilter = true;
+    workFilter = null;
+  } else if(value){
+    coreOnlyFilter = false;
+    workFilter = value;
+  } else {
+    coreOnlyFilter = false;
+    workFilter = null;
+  }
+  setViewFilterLabel(label, !!value);
+  closeViewFilterMenu();
   renderMarkers();
   renderIndex();
   if(!workFilter) return;
@@ -2336,7 +2336,6 @@ function selectWorkFilter(value, label){
     .filter(id=>{
       const e = DATA[id];
       if(e.type!=='place' || !e.coords) return false;
-      if(coreOnlyFilter && e.relevance!=='core') return false;
       return (e.related||[]).includes(workFilter);
     })
     .map(id=>DATA[id].coords);
@@ -2348,59 +2347,52 @@ function selectWorkFilter(value, label){
     map.flyToBounds(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
   }
 }
-function populateWorkFilterSelect(){
-  const menu = document.getElementById('workFilterMenu');
+function populateViewFilterMenu(){
+  const menu = document.getElementById('viewFilterMenu');
   if(!menu) return;
-  const prevValue = workFilterValue;
-  const canonWorks = [], pasticheWorks = [];
+  const prevValue = viewFilterValue;
+  const canonWorks = [];
   Object.keys(DATA).forEach(id=>{
     const e = DATA[id];
-    if(e.type==='work'){ (e.canon ? canonWorks : pasticheWorks).push(id); }
+    if(e.type==='work' && e.canon) canonWorks.push(id);
   });
   canonWorks.sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
-  pasticheWorks.sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
   const itemHtml = (value, label) => `<button type="button" class="mt-select-menu-item${value===prevValue?' active':''}" data-value="${escapeAttr(value)}" role="option">${escapeHtml(label)}</button>`;
-  // 「全作品表示」は実際に選べる一つの選択肢として並べている。
-  // ★一旦、正典外（パスティーシュ等）の作品は選択肢から外し、正典作品のみを
-  // 並べている（pasticheWorksの集計自体は残してあるので、元に戻す場合は
-  // 下のコメントアウトを外すだけでよい）。
-  let html = itemHtml('__all__', '全作品表示');
+  let html = itemHtml('', '全ての地点');
+  html += itemHtml('__core__', '全ての正典登場地');
   if(canonWorks.length){
-    html += `<div class="mt-select-menu-section">正典（コナン・ドイル）</div>`;
+    html += `<div class="mt-select-menu-section">正典（コナン・ドイル）の各作品</div>`;
     html += canonWorks.map(id=>itemHtml(id, DATA[id].name)).join('');
   }
-  // if(pasticheWorks.length){
-  //   html += `<div class="mt-select-menu-section">正典外（パスティーシュ等）</div>`;
-  //   html += pasticheWorks.map(id=>itemHtml(id, DATA[id].name)).join('');
-  // }
   menu.innerHTML = html;
   menu.querySelectorAll('.mt-select-menu-item').forEach(item=>{
-    item.addEventListener('click', ()=>selectWorkFilter(item.dataset.value, item.textContent));
+    item.addEventListener('click', ()=>selectViewFilter(item.dataset.value, item.textContent));
   });
-  if(prevValue && prevValue !== '__all__' && DATA[prevValue] && DATA[prevValue].type==='work'){
-    setWorkFilterLabel(DATA[prevValue].name, true);
-  } else if(prevValue === '__all__'){
-    setWorkFilterLabel('全作品表示', false);
-  } else if(workFilter){
+  if(prevValue === '__core__'){
+    setViewFilterLabel('全ての正典登場地', true);
+  } else if(prevValue && DATA[prevValue] && DATA[prevValue].type==='work'){
+    setViewFilterLabel(DATA[prevValue].name, true);
+  } else if(prevValue){
     // 選択中だった作品がデータの入れ替えで無くなった場合は、絞り込みを解除する
+    viewFilterValue = '';
     workFilter = null;
-    workFilterValue = '';
-    setWorkFilterLabel('作品選択', false);
+    coreOnlyFilter = false;
+    setViewFilterLabel('表示絞り込み', false);
   }
-  // それ以外（プレースホルダーのまま）は変更なし
+  // それ以外（''のまま＝「全ての地点」）は変更なし
 }
-const workFilterBtn = document.getElementById('workFilterBtn');
-workFilterBtn.addEventListener('click', (ev)=>{
+const viewFilterBtn = document.getElementById('viewFilterBtn');
+viewFilterBtn.addEventListener('click', (ev)=>{
   ev.stopPropagation();
-  if(document.getElementById('workFilterWrap').classList.contains('open')) closeWorkFilterMenu();
-  else openWorkFilterMenu();
+  if(document.getElementById('viewFilterWrap').classList.contains('open')) closeViewFilterMenu();
+  else openViewFilterMenu();
 });
 document.addEventListener('click', (ev)=>{
-  if(!ev.target.closest('#workFilterMenu') && !ev.target.closest('#workFilterBtn')) closeWorkFilterMenu();
+  if(!ev.target.closest('#viewFilterMenu') && !ev.target.closest('#viewFilterBtn')) closeViewFilterMenu();
 });
-document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeWorkFilterMenu(); });
-window.addEventListener('resize', closeWorkFilterMenu);
-document.getElementById('mapControlsCluster').addEventListener('scroll', closeWorkFilterMenu);
+document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeViewFilterMenu(); });
+window.addEventListener('resize', closeViewFilterMenu);
+document.getElementById('mapControlsCluster').addEventListener('scroll', closeViewFilterMenu);
 
 // ---------- お気に入りリストごとの地点絞り込み ----------
 // 作品ごとの絞り込み（workFilter、すぐ上）と全く同じ「自前ボタン＋一覧」のUIパターンを
@@ -3447,7 +3439,7 @@ function openEntityModal(prefill){
         overrides[relId].extraRelated = Array.from(extra);
       });
       await Promise.all(related.map(relId=>rpcObjNestedArrayAddUnique('p-overrides', relId, 'extraRelated', newId)));
-      DATA = buildData(); renderMarkers(); renderIndex(); populateWorkFilterSelect();
+      DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
       clearDraft('newEntity', 'new');
       closeModal(); showToast('追加しました。');
       showEntity(newId);
@@ -3530,7 +3522,7 @@ function openEditModal(targetId){
     if(isReviewer()){
       overrides[targetId] = Object.assign(overrides[targetId] || {}, draft);
       await rpcObjMerge('p-overrides', targetId, draft);
-      DATA = buildData(); renderMarkers(); renderIndex(); populateWorkFilterSelect();
+      DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
       clearDraft('editEntity', targetId);
       closeModal(); showToast('保存しました。');
       showEntity(targetId, {fromTrail:true});
@@ -3757,7 +3749,7 @@ async function approveProposal(propId){
   }
   p.status = 'approved';
   await rpcArrPatch('p-proposals', propId, {status:'approved'});
-  DATA = buildData(); renderMarkers(); renderIndex(); populateWorkFilterSelect();
+  DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
   showToast('承認しました。');
   updateReviewCountBadge();
   openReviewDashboard();
@@ -3810,7 +3802,7 @@ async function deleteEntity(targetId){
   privateNotes = privateNotes.filter(n=>n.entityId!==targetId);
   await safeSet(privateNotesKey(), privateNotes);
   DATA = buildData();
-  renderMarkers(); renderIndex(); populateWorkFilterSelect();
+  renderMarkers(); renderIndex(); populateViewFilterMenu();
   panel.classList.remove('open');
   showToast('項目を削除しました。');
 }
@@ -4759,7 +4751,7 @@ document.addEventListener('click', (ev)=>{ if(!ev.target.closest('.action-btns')
   renderMarkers();
   renderJournalMarkers();
   renderIndex();
-  populateWorkFilterSelect();
+  populateViewFilterMenu();
   populateFavFilterMenu();
   // URLに ?id=項目ID が付いていれば、その項目の詳細を開いた状態で起動する
   // （SNSなどで共有された個別ページのリンクから直接開けるようにするため）
