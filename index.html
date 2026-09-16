@@ -370,6 +370,11 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .fav-toggle-btn{float:right;background:none;border:1px solid var(--line);color:var(--slate);font-size:.8rem;padding:3px 10px;border-radius:12px;cursor:pointer;margin-bottom:10px;}
 .fav-toggle-btn.active{background:var(--brass);border-color:var(--brass);color:#fff;}
 .fav-toggle-btn:hover{border-color:var(--brass);}
+/* ルートかごの詳細パネル内トグル。お気に入り（brass=金色）と見分けがつくよう
+   ルート関連は一貫してteal（既存の.route-pick-dest.activeと同じ色）に揃えている。 */
+.route-cart-toggle-btn{float:right;background:none;border:1px solid var(--line);color:var(--slate);font-size:.8rem;padding:3px 10px;border-radius:12px;cursor:pointer;margin-bottom:10px;margin-right:8px;}
+.route-cart-toggle-btn.active{background:var(--teal);border-color:var(--teal);color:#fff;}
+.route-cart-toggle-btn:hover{border-color:var(--teal);}
 .fav-list-count{color:var(--slate);font-size:.78rem;}
 .fav-list-row{display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .fav-list-row label{flex:1;min-width:0;}
@@ -544,6 +549,21 @@ body.map-picking .leaflet-container{cursor:crosshair;}
    2クラス指定で詳細度を上げている。 */
 .route-pick-btn.route-pick-waypoint{flex:1 1 100%;text-align:left;margin-top:2px;white-space:normal;}
 .route-pick-waypoint.active{background:var(--parchment-2);border-color:var(--brass);color:var(--charcoal);}
+/* ルートかごの浮きバー（画面左下）。中身が0件の間はdisplay:none、1件以上で.showが付く。
+   右下は表示絞り込み等の帯・浮きボタンで埋まっているため、衝突しない左下に置く。 */
+.route-cart-bar{position:absolute;bottom:16px;left:16px;z-index:500;display:none;align-items:stretch;background:var(--ink-2);color:var(--fog);border:1px solid var(--teal);border-radius:22px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:calc(100vw - 32px);}
+.route-cart-bar.show{display:flex;}
+.route-cart-bar-main{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--fog);font-size:.82rem;font-weight:600;padding:9px 10px 9px 14px;cursor:pointer;white-space:nowrap;font-family:inherit;}
+.route-cart-bar-count{background:var(--teal);color:#fff;border-radius:10px;padding:1px 8px;font-size:.76rem;font-weight:700;}
+.route-cart-bar-clear{flex:none;background:none;border:none;border-left:1px solid rgba(230,224,209,.25);color:var(--fog);opacity:.7;font-size:.9rem;line-height:1;padding:0 12px;cursor:pointer;}
+.route-cart-bar-clear:hover{opacity:1;}
+/* ルートかごモーダル内の地点一覧（openRouteCartModal）。.route-pick-listと似た見た目。 */
+.route-cart-list{max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:4px;margin-top:10px;}
+.route-cart-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:#fff;}
+.route-cart-row:last-child{border-bottom:none;}
+.route-cart-row-name{font-size:.85rem;color:var(--charcoal);flex:1;min-width:0;}
+.route-cart-row-remove{flex:none;background:none;border:1px solid var(--line);color:var(--slate);width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:.78rem;line-height:1;padding:0;}
+.route-cart-row-remove:hover{border-color:var(--burgundy);color:var(--burgundy);}
 /* 「現在地」は一覧の実在の地点とは別枠なので、背景を少し変えて区別する
    （出発地専用＝○目的地ボタンを持たない一行だけの特別枠）。 */
 .route-pick-row-current{background:var(--parchment-2);}
@@ -628,6 +648,10 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .pin-preview-desc{font-size:.74rem;color:var(--slate);line-height:1.5;margin:0 0 7px;}
 .pin-preview-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .pin-preview-more{font-size:.72rem;color:var(--brass-light);font-weight:600;}
+.pin-preview-actions{display:flex;align-items:center;gap:6px;flex:none;}
+.pin-preview-route-btn{flex:none;background:none;border:1px solid rgba(230,224,209,.35);color:var(--fog);font-size:.92rem;line-height:1;padding:4px 8px;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.pin-preview-route-btn:hover{border-color:#5c9490;}
+.pin-preview-route-btn.active{background:var(--teal);border-color:var(--teal);color:#fff;}
 .pin-preview-fav-btn{flex:none;background:none;border:1px solid rgba(230,224,209,.35);color:var(--fog);font-size:.92rem;line-height:1;padding:4px 8px;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .pin-preview-fav-btn:hover{border-color:var(--brass-light);}
 .pin-preview-fav-btn.active{background:var(--brass);border-color:var(--brass);color:#fff;}
@@ -746,6 +770,15 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はviewFilterMenuと同じ）。
          こちらは1つ選んだらすぐ地図が動いて目的が完結するので、従来通り選択即クローズのまま。 -->
     <div class="mt-select-menu" id="favFilterMenu" role="listbox"></div>
+    <!-- ルートかご：お気に入りとは独立した一時的なルート作業台。かごが空の間は
+         非表示（.showが付いた時だけ見える）。右側の帯・浮きボタン群と衝突しないよう
+         左下に置いている。 -->
+    <div class="route-cart-bar" id="routeCartBar">
+      <button type="button" class="route-cart-bar-main" id="routeCartBarOpen" title="ルートかごの中身を見る">
+        🧭 <span class="route-cart-bar-label">ルート作成中</span><span class="route-cart-bar-count" id="routeCartBarCount">0</span>
+      </button>
+      <button type="button" class="route-cart-bar-clear" id="routeCartBarClear" title="かごを空にする" aria-label="かごを空にする">✕</button>
+    </div>
     <!-- 現在地ボタン・221Bへボタンは帯から独立させ、帯の真上に積み重ねた
          浮きボタンにしている。こうすることで「表示絞り込み」「古地図」の文字ラベルを
          スマホでも消さずに残せる。221Bへは特別な項目への近道なので、これまで通り
@@ -842,6 +875,80 @@ function defaultFavoriteListName(){
   const existingNames = new Set(favoriteLists.map(l=>l.name));
   while(existingNames.has(`お気に入り${n}`)) n++;
   return `お気に入り${n}`;
+}
+// ---------- ルートかご（一時的なルート選択） ----------
+// お気に入りとは完全に独立した、セッション中だけ保持する一時的な選択かご。
+// Supabaseには一切保存しない（ページを再読み込みすると空になる）。お気に入りは
+// 「後で見返したい地点」を貯めておく場所、ルートかごは「今からこの順番で回りたい」を
+// 組み立てる一時的な作業台、という別の役割としてはっきり分けている。ログイン不要で
+// 誰でも使える（保存の必要がなく、Supabaseに触れないため）。地点（type==='place'かつ
+// coordsあり）だけを入れられる。
+let routeCart = []; // [entityId, ...]
+function isInRouteCart(id){
+  return routeCart.includes(id);
+}
+function addToRouteCart(id){
+  const e = DATA[id];
+  if(!e || e.type!=='place' || !e.coords) return false;
+  if(routeCart.includes(id)) return true;
+  if(routeCart.length >= GMAPS_ROUTE_MAX_STOPS){
+    showToast(`ルートかごに入れられるのは最大${GMAPS_ROUTE_MAX_STOPS}件までです。`);
+    return false;
+  }
+  routeCart.push(id);
+  renderRouteCartBar();
+  return true;
+}
+function removeFromRouteCart(id){
+  const idx = routeCart.indexOf(id);
+  if(idx===-1) return;
+  routeCart.splice(idx, 1);
+  renderRouteCartBar();
+}
+function toggleRouteCart(id){
+  const e = DATA[id];
+  if(!e) return;
+  if(isInRouteCart(id)){
+    removeFromRouteCart(id);
+    showToast(`「${e.name}」をルートかごから外しました。`);
+  } else {
+    if(addToRouteCart(id)) showToast(`「${e.name}」をルートかごに追加しました。`);
+  }
+  refreshRouteCartUiFor(id);
+}
+function clearRouteCart(){
+  const affected = routeCart.slice();
+  routeCart = [];
+  renderRouteCartBar();
+  affected.forEach(refreshRouteCartUiFor);
+  showToast('ルートかごを空にしました。');
+}
+// ルートかごボタンは、地図ピンのプレビューカードと項目詳細パネルの両方に出てくる。
+// 片方で切り替えた瞬間、もう片方が同時に画面に出ていてもボタンの見た目がズレないよう、
+// その項目に関係する箇所だけをその場で更新する（対象がその時点で画面に無ければ何もしない）。
+function refreshRouteCartUiFor(id){
+  const on = isInRouteCart(id);
+  const panelBtn = document.getElementById('routeCartToggleBtn');
+  if(panelBtn && panelBtn.dataset.routeCartId===id){
+    panelBtn.classList.toggle('active', on);
+    panelBtn.textContent = on ? '✓ ルートかごに追加済み' : '🧭 ルートに追加';
+  }
+  const popupBtn = document.querySelector('.pin-preview-route-btn');
+  if(popupBtn && popupBtn.dataset.routeCartId===id){
+    popupBtn.classList.toggle('active', on);
+    popupBtn.textContent = on ? '✓' : '🧭';
+    const label = on ? 'ルートかごから外す' : 'ルートに追加';
+    popupBtn.title = label;
+    popupBtn.setAttribute('aria-label', label);
+  }
+}
+// 画面下部に浮かせる「ルート作成中」バー。かごが空の間は非表示。
+function renderRouteCartBar(){
+  const bar = document.getElementById('routeCartBar');
+  const countEl = document.getElementById('routeCartBarCount');
+  if(!bar || !countEl) return;
+  countEl.textContent = String(routeCart.length);
+  bar.classList.toggle('show', routeCart.length>0);
 }
 function getDisplayName(user){
   if(!user) return '';
@@ -2960,6 +3067,110 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds)
   showToast('Googleマップを開いています…');
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+// ルートかごの中身を確認・編集するモーダル。お気に入りリストの中身とは完全に別物
+// （routeCart配列そのもの）を表示する。地点を1件外す・かご自体を空にする・
+// ルートを見る（既存のopenRouteOriginConfirmModalへそのまま渡す）・お気に入り
+// リストとして保存する、の4つの操作をここに集約する。
+function openRouteCartModal(){
+  const stops = routeCart.map(id=>DATA[id] ? {...DATA[id], id} : null).filter(Boolean);
+  const rowsHtml = stops.length
+    ? stops.map(e=>`
+      <div class="route-cart-row">
+        <span class="route-cart-row-name">${escapeHtml(e.name)}</span>
+        <button type="button" class="route-cart-row-remove" data-remove-id="${e.id}" title="かごから外す" aria-label="かごから外す">✕</button>
+      </div>`).join('')
+    : '<div class="alias-list-empty">まだ何も入っていません。地図のピンや項目のページで「🧭 ルートに追加」を押すと、ここに溜まっていきます。</div>';
+  modalBody.innerHTML = `
+    <h3>ルートかご</h3>
+    <div class="modal-sub">お気に入りとは別の、一時的な作業台です。ここでの選択はページを再読み込みすると消えます。気に入った組み合わせは「お気に入りリストとして保存」で残せます。</div>
+    <div class="route-cart-list" id="routeCartModalList">${rowsHtml}</div>
+    ${stops.length===1 ? '<div class="field"><div class="hint">ルート表示には地点が2つ以上必要です。</div></div>' : ''}
+    <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
+      <button type="button" class="modal-cancel" id="routeCartClearAllBtn" ${stops.length===0?'disabled':''}>かごを空にする</button>
+      <div style="display:flex;gap:10px;">
+        <button type="button" class="modal-cancel" id="routeCartSaveAsListBtn" ${stops.length===0?'disabled':''}>お気に入りリストとして保存</button>
+        <button type="button" class="modal-submit" id="routeCartGoBtn" ${stops.length<2?'disabled':''}>ルートを見る</button>
+      </div>
+    </div>`;
+  overlay.classList.add('open');
+  modalBody.querySelectorAll('[data-remove-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const rid = btn.dataset.removeId;
+      removeFromRouteCart(rid);
+      refreshRouteCartUiFor(rid);
+      openRouteCartModal();
+    });
+  });
+  document.getElementById('routeCartClearAllBtn').addEventListener('click', ()=>{
+    clearRouteCart();
+    openRouteCartModal();
+  });
+  document.getElementById('routeCartGoBtn').addEventListener('click', ()=>{
+    if(stops.length<2) return;
+    closeModal();
+    openRouteOriginConfirmModal(stops);
+  });
+  document.getElementById('routeCartSaveAsListBtn').addEventListener('click', ()=>{
+    if(!currentUser){ showToast('お気に入りリストへの保存にはログインが必要です。'); return; }
+    if(stops.length===0) return;
+    openSaveRouteCartAsListModal();
+  });
+}
+// ルートかごの中身を、既存のお気に入りリスト（複数選択可）に追加するか、新しい
+// リストとして作成する。openFavoriteListsModal（1項目を複数リストへ）の逆パターン
+// ＝「複数項目を1つ以上のリストへ」にあたる。新規作成はentityIds:routeCart.slice()で
+// 最初から中身入りのリストを作る（openFavoriteListsModalの新規作成と同じ
+// isFirstEverList分岐をそのまま踏襲）。
+function openSaveRouteCartAsListModal(){
+  const stops = routeCart.map(id=>DATA[id]).filter(Boolean);
+  if(stops.length===0){ closeModal(); return; }
+  modalBody.innerHTML = `
+    <h3>ルートかごをお気に入りリストに保存</h3>
+    <div class="modal-sub">ルートかごの${stops.length}件を追加したいリストにチェックを入れてください（複数選択可）。</div>
+    <div class="checklist" id="cartSaveListCheckList">
+      ${favoriteLists.length ? favoriteLists.map(l=>`
+        <div class="fav-list-row">
+          <label><input type="checkbox" data-cart-save-list-id="${l.id}"> <span class="fav-list-name">${escapeHtml(l.name)}</span> <span class="fav-list-count">（${l.entityIds.length}件）</span></label>
+        </div>
+      `).join('') : '<div class="alias-list-empty">まだリストがありません。下から新しく作成できます。</div>'}
+    </div>
+    <div class="field">
+      <label>新しいリストを作る</label>
+      <div class="geo-row"><input type="text" id="cart-new-list-name" placeholder="お気に入り${favoriteLists.length+1}"><button type="button" class="geo-search-btn" id="cart-new-list-create">作成して保存</button></div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" id="cart-save-back">戻る</button>
+      <button class="modal-submit" id="cart-save-apply" ${favoriteLists.length?'':'disabled'}>選んだリストに追加</button>
+    </div>`;
+  overlay.classList.add('open');
+  document.getElementById('cart-save-back').addEventListener('click', ()=>openRouteCartModal());
+  document.getElementById('cart-save-apply')?.addEventListener('click', async ()=>{
+    const checked = Array.from(modalBody.querySelectorAll('#cartSaveListCheckList input[type=checkbox]:checked')).map(cb=>cb.dataset.cartSaveListId);
+    if(checked.length===0){ showToast('追加先のリストにチェックを入れてください。'); return; }
+    for(const listId of checked){
+      const list = favoriteLists.find(l=>l.id===listId);
+      if(!list) continue;
+      const before = list.entityIds.length;
+      list.entityIds = Array.from(new Set([...list.entityIds, ...routeCart]));
+      if(list.entityIds.length !== before) await rpcArrPatch(favoritesKey(), list.id, {entityIds: list.entityIds});
+    }
+    renderIndex();
+    showToast('ルートかごの地点をリストに追加しました。');
+    closeModal();
+  });
+  document.getElementById('cart-new-list-create').addEventListener('click', async ()=>{
+    const rawName = document.getElementById('cart-new-list-name').value.trim();
+    const name = rawName || defaultFavoriteListName();
+    const newList = {id:'list-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name, entityIds: routeCart.slice()};
+    const isFirstEverList = favoriteLists.length === 0;
+    favoriteLists.push(newList);
+    if(isFirstEverList) await safeSet(favoritesKey(), favoriteLists);
+    else await rpcArrAppend(favoritesKey(), newList);
+    renderIndex();
+    showToast(`新しいリスト「${newList.name}」に保存しました。`);
+    closeModal();
+  });
+}
 const favFilterBtn = document.getElementById('favFilterBtn');
 favFilterBtn.addEventListener('click', (ev)=>{
   ev.stopPropagation();
@@ -2972,6 +3183,14 @@ document.addEventListener('click', (ev)=>{
 document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeFavFilterMenu(); });
 window.addEventListener('resize', closeFavFilterMenu);
 document.getElementById('mapControlsCluster').addEventListener('scroll', closeFavFilterMenu);
+
+// ルートかごの浮きバー。本体タップでかごの中身モーダルを開き、✕でかごを空にする
+// （バーが見えている＝かごに1件以上入っている状態なので、確認なしで即座に空にする）。
+document.getElementById('routeCartBarOpen').addEventListener('click', ()=>openRouteCartModal());
+document.getElementById('routeCartBarClear').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  clearRouteCart();
+});
 
 // 221Bへの直行ボタン。地図をベーカー街221Bへ移動させつつ、地名ピンをタップした時と
 // 同じ小さいプレビューカードを開く（フルの詳細パネルはカードをタップした時だけ開く）。
@@ -3160,6 +3379,7 @@ function renderPinPreviewPopupHtml(e, id){
   const imgUrl = (e.photos && e.photos.length && e.photos[0].url) ? e.photos[0].url : e.image;
   const snippet = pinPopupSnippet(e.desc, 46);
   const isFav = favoriteListsContaining(id).length > 0;
+  const inCart = isInRouteCart(id);
   return `<div class="pin-preview-card" data-popup-open="${id}">
     ${imgUrl ? `<img class="pin-preview-img" src="${escapeAttr(imgUrl)}" alt="" loading="lazy">` : ''}
     <div class="pin-preview-body">
@@ -3167,7 +3387,10 @@ function renderPinPreviewPopupHtml(e, id){
       ${snippet ? `<div class="pin-preview-desc">${escapeHtml(snippet)}</div>` : ''}
       <div class="pin-preview-footer">
         <span class="pin-preview-more">詳細を見る ›</span>
-        <button type="button" class="pin-preview-fav-btn${isFav?' active':''}" data-fav-toggle="${id}" title="お気に入りに追加" aria-label="お気に入りに追加">${isFav?'★':'☆'}</button>
+        <div class="pin-preview-actions">
+          <button type="button" class="pin-preview-route-btn${inCart?' active':''}" data-route-cart-id="${id}" title="${inCart?'ルートかごから外す':'ルートに追加'}" aria-label="${inCart?'ルートかごから外す':'ルートに追加'}">${inCart?'✓':'🧭'}</button>
+          <button type="button" class="pin-preview-fav-btn${isFav?' active':''}" data-fav-toggle="${id}" title="お気に入りに追加" aria-label="お気に入りに追加">${isFav?'★':'☆'}</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -3187,6 +3410,14 @@ function openPlacePreviewPopup(id){
   popupEl?.querySelector('[data-popup-open]')?.addEventListener('click', ()=>{
     map.closePopup();
     showEntity(id);
+  });
+  // 🧭ルートかごボタンはカード全体のクリック（詳細ページへ遷移）に巻き込まれないよう
+  // stopPropagationする。お気に入りと違いログイン不要・確認モーダルも挟まない単純な
+  // ON/OFFトグルなので、toggleRouteCartを直接呼ぶだけでよい（見た目の更新は
+  // toggleRouteCart内のrefreshRouteCartUiForがこのボタン自身を見つけて行う）。
+  popupEl?.querySelector('[data-route-cart-id]')?.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    toggleRouteCart(id);
   });
   // ☆お気に入りボタンはカード全体のクリック（詳細ページへ遷移）に巻き込まれない
   // よう、必ずstopPropagationする。既存の「詳細ページ内の☆お気に入りボタン」
@@ -3659,6 +3890,12 @@ function showEntity(id, opts={}){
   const favListsForEntity = favoriteListsContaining(id);
   const isFav = favListsForEntity.length > 0;
   const favBtnHtml = `<button class="fav-toggle-btn ${isFav?'active':''}" id="favToggleBtn">${isFav?'★':'☆'} お気に入り${isFav?`（${favListsForEntity.length}）`:''}</button>`;
+  // ルートかごはお気に入りと違い地点限定・ログイン不要の単純なON/OFFトグルなので、
+  // モーダルを挟まずtoggleRouteCartを直接呼ぶ。地点以外（人物・作品・用語）には出さない。
+  const inCart = (e.type==='place' && e.coords) ? isInRouteCart(id) : false;
+  const routeCartBtnHtml = (e.type==='place' && e.coords)
+    ? `<button class="route-cart-toggle-btn ${inCart?'active':''}" id="routeCartToggleBtn" data-route-cart-id="${id}">${inCart?'✓ ルートかごに追加済み':'🧭 ルートに追加'}</button>`
+    : '';
   const DESC_LIMIT = 500;
   const descBodyHtml = renderDescBody(e.desc);
   const descHtml = descVisibleLength(e.desc) > DESC_LIMIT
@@ -3684,6 +3921,7 @@ function showEntity(id, opts={}){
     <div class="panel-body">
       <span class="type-badge badge-${entityClass(e)}">${entityLabel(e)}</span>${e.relevance==='peripheral' ? ' <span class="type-badge badge-peripheral">周辺情報</span>' : (e.relevance==='misc' ? ' <span class="type-badge badge-misc">その他</span>' : '')}
       ${favBtnHtml}
+      ${routeCartBtnHtml}
       <h3>${escapeHtml(e.name)}</h3>
       ${tagsHtml}
       ${shareRowHtml}
@@ -3731,6 +3969,9 @@ function showEntity(id, opts={}){
   document.getElementById('favToggleBtn')?.addEventListener('click', ()=>{
     if(!currentUser){ showToast('お気に入り登録にはログインが必要です。'); return; }
     openFavoriteListsModal(id);
+  });
+  document.getElementById('routeCartToggleBtn')?.addEventListener('click', ()=>{
+    toggleRouteCart(id);
   });
   {
     const shareUrl = absoluteUrlForEntity(id);
