@@ -3601,6 +3601,10 @@ const markerClusterGroup = L.markerClusterGroup({
   disableClusteringAtZoom: DECLUSTER_ZOOM,
   spiderfyOnMaxZoom: true,
   showCoverageOnHover: false,
+  // 項目数が増えてきた場合に備え、大量のピンを一括追加する際は内部で
+  // 処理を細切れ（デフォルトでは200msごとに区切って50ms休む）にして、
+  // 地図の操作がその間フリーズしないようにする。
+  chunkedLoading: true,
   iconCreateFunction: function(cluster){
     const children = cluster.getAllChildMarkers();
     const count = children.length;
@@ -3741,6 +3745,11 @@ function renderMarkers(){
   markerClusterGroup.clearLayers();
   Object.values(markers).forEach(m=>{ if(map.hasLayer(m)) map.removeLayer(m); });
   markers = {};
+  // addLayer()を1件ずつ呼ぶと、追加のたびにクラスタツリーを再計算するため
+  // 項目数が増えるほど遅くなる（Leaflet.markercluster公式が個別addLayerの
+  // ループを避けるよう案内している）。いったんこの配列にまとめておき、
+  // 最後にaddLayers()を1回だけ呼んで一括でクラスタを組み直す。
+  const newLayers = [];
   Object.keys(DATA).forEach(id=>{
     const e = DATA[id];
     if(e.type==='place' && e.coords){
@@ -3772,9 +3781,10 @@ function renderMarkers(){
       // 合体して「◯件」の数字に含まれ、ズームインしてクラスタが自然に分かれた
       // 瞬間だけ、上で設定した特別な見た目（大きいアイコン・常時ラベル）で
       // 単独表示になる（合体中は下のiconCreateFunctionで名前を優先表示する）。
-      markerClusterGroup.addLayer(m);
+      newLayers.push(m);
     }
   });
+  markerClusterGroup.addLayers(newLayers);
 }
 function updateLabelVisibility(){
   const el = map.getContainer();
@@ -3817,6 +3827,7 @@ const journalMarkerClusterGroup = L.markerClusterGroup({
   disableClusteringAtZoom: DECLUSTER_ZOOM,
   spiderfyOnMaxZoom: true,
   showCoverageOnHover: false,
+  chunkedLoading: true,
   iconCreateFunction: function(cluster){
     const count = cluster.getAllChildMarkers().length;
     return L.divIcon({
@@ -3844,14 +3855,17 @@ function setJournalMarkersVisible(visible){
 function renderJournalMarkers(){
   journalMarkerClusterGroup.clearLayers();
   journalMarkers = [];
+  // renderMarkers()と同じ理由で、1件ずつaddLayerせず配列にまとめてから
+  // addLayers()を1回だけ呼ぶ。訪問記録は件数の上限を設けていないため、
+  // 将来的にまとまった件数になったときの体感速度への影響が大きい。
   journal.forEach(j=>{
     if(!j.coords) return;
     const m = L.marker(j.coords, {icon: makeJournalIcon()});
     m.on('click', ()=>{ if(mapPickModeActive) return; openJournalDetail(j.id); });
     m.bindTooltip(escapeHtml(j.placeName), {direction:'top', offset:[0,-8]});
     journalMarkers.push(m);
-    journalMarkerClusterGroup.addLayer(m);
   });
+  journalMarkerClusterGroup.addLayers(journalMarkers);
 }
 
 // ---------- 索引 ----------
