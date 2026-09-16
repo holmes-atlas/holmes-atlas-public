@@ -179,6 +179,7 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
   cursor:pointer;font-family:'Crimson Pro',serif;}
 .mt-select-menu-item:hover{background:#f7ecd0;}
 .mt-select-menu-item.active{background:#f0e6c8;font-weight:600;}
+.mt-select-menu-count{opacity:.6;font-size:.78rem;margin-left:3px;}
 @media (max-width:480px){
   .mt-seg{padding:0 9px;gap:5px;}
   .mt-select-btn{padding:0 9px;}
@@ -299,6 +300,11 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .fav-toggle-btn.active{background:var(--brass);border-color:var(--brass);color:#fff;}
 .fav-toggle-btn:hover{border-color:var(--brass);}
 .fav-list-count{color:var(--slate);font-size:.78rem;}
+.fav-list-row{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.fav-list-row label{flex:1;min-width:0;}
+.fav-list-rename-btn{background:none;border:1px solid var(--line);color:var(--fog);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.72rem;flex:none;line-height:1;padding:0;}
+.fav-list-rename-btn:hover{border-color:var(--brass-light);color:var(--brass-light);}
+.fav-list-rename-input{width:100%;font-size:.85rem;padding:2px 4px;border:1px solid var(--brass-light);border-radius:3px;box-sizing:border-box;}
 .badge-place{background:var(--brass);} .badge-person{background:var(--burgundy);}
 .badge-work{background:var(--teal);} .badge-term{background:var(--slate);}
 .badge-pastiche{background:var(--pastiche);}
@@ -553,6 +559,13 @@ body.map-picking .leaflet-container{cursor:crosshair;}
         </button>
       </span>
       <span class="mt-div"></span>
+      <span class="mt-seg mt-select-wrap" id="favFilterWrap">
+        <button type="button" class="mt-select-btn" id="favFilterBtn" title="選んだお気に入りリストの地点だけを地図に表示する" aria-haspopup="listbox" aria-expanded="false">
+          <span id="favFilterBtnLabel">お気に入り表示</span>
+          <svg class="mt-ic mt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </span>
+      <span class="mt-div"></span>
       <button class="mt-seg" id="labelForceBtn" title="ズームを寄せなくても地点名を表示する（重なる場所は「〇〇 他N件」とまとめて表示）" aria-pressed="false">
         <svg class="mt-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
         <span>名称表示</span>
@@ -568,6 +581,8 @@ body.map-picking .leaflet-container{cursor:crosshair;}
          （帯の中に置くと、横スクロール用のoverflow設定に巻き込まれて
          上にはみ出す部分が見えなくなってしまうため）。 -->
     <div class="mt-select-menu" id="workFilterMenu" role="listbox"></div>
+    <!-- お気に入りリストで絞り込む一覧も同じ「帯の外に浮かせる」方式（理由はworkFilterMenuと同じ）。 -->
+    <div class="mt-select-menu" id="favFilterMenu" role="listbox"></div>
     <!-- 現在地ボタン・221Bへボタンは帯から独立させ、帯の真上に積み重ねた
          浮きボタンにしている。こうすることで「正典のみ」「古地図」の文字ラベルを
          スマホでも消さずに残せる。221Bへは特別な項目への近道なので、これまで通り
@@ -947,7 +962,14 @@ supabaseClient.auth.onAuthStateChange(async (event, session)=>{
   currentUser = session?.user || null;
   privateNotes = asArray(await safeGet(privateNotesKey()));
   favoriteLists = await resolveFavoriteLists();
+  if(favListFilter && !favoriteLists.find(l=>l.id===favListFilter)){
+    // ログアウト等で選択中だったリストが無くなった場合は、地図の絞り込みも解除する
+    favListFilter = null;
+    renderMarkers();
+  }
+  populateFavFilterMenu();
   renderAuthArea();
+  renderIndex();
 });
 
 
@@ -2380,6 +2402,95 @@ document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeWorkFilt
 window.addEventListener('resize', closeWorkFilterMenu);
 document.getElementById('mapControlsCluster').addEventListener('scroll', closeWorkFilterMenu);
 
+// ---------- お気に入りリストごとの地点絞り込み ----------
+// 作品ごとの絞り込み（workFilter、すぐ上）と全く同じ「自前ボタン＋一覧」のUIパターンを
+// そのまま流用。選んだお気に入りリストに入っている地点だけを地図・索引に表示し、
+// その範囲まで地図を動かす（＝「このリストを地図で開く」ボタンを兼ねる）。
+let favListFilter = null; // 選択中のお気に入りリストid。nullなら絞り込みなし
+function setFavFilterLabel(text, active){
+  const label = document.getElementById('favFilterBtnLabel');
+  if(label) label.textContent = text;
+  const btn = document.getElementById('favFilterBtn');
+  if(btn) btn.classList.toggle('active', !!active);
+}
+function closeFavFilterMenu(){
+  const menu = document.getElementById('favFilterMenu');
+  const wrap = document.getElementById('favFilterWrap');
+  const btn = document.getElementById('favFilterBtn');
+  if(menu) menu.classList.remove('show');
+  if(wrap) wrap.classList.remove('open');
+  if(btn) btn.setAttribute('aria-expanded','false');
+}
+function openFavFilterMenu(){
+  const btn = document.getElementById('favFilterBtn');
+  const menu = document.getElementById('favFilterMenu');
+  const wrap = document.getElementById('favFilterWrap');
+  const stage = document.querySelector('.stage');
+  if(!btn || !menu || !stage) return;
+  populateFavFilterMenu();
+  const br = btn.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  menu.style.right = Math.max(8, sr.right - br.right) + 'px';
+  menu.style.bottom = (sr.bottom - br.top + 8) + 'px';
+  menu.classList.add('show');
+  wrap.classList.add('open');
+  btn.setAttribute('aria-expanded','true');
+}
+function selectFavFilter(listId){
+  favListFilter = listId || null;
+  const list = favListFilter ? favoriteLists.find(l=>l.id===favListFilter) : null;
+  setFavFilterLabel(list ? list.name : 'お気に入り表示', !!list);
+  closeFavFilterMenu();
+  renderMarkers();
+  renderIndex();
+  if(!list) return;
+  const coordsList = list.entityIds
+    .map(id=>DATA[id])
+    .filter(e=>e && e.type==='place' && e.coords)
+    .map(e=>e.coords);
+  if(coordsList.length===0){
+    showToast('このリストには地図上の地点がまだありません。');
+  } else if(coordsList.length===1){
+    map.flyTo(coordsList[0], Math.max(map.getZoom(), 14), {duration:0.7});
+  } else {
+    map.flyToBounds(L.latLngBounds(coordsList), {padding:[48,48], maxZoom:15, duration:0.7});
+  }
+}
+function populateFavFilterMenu(){
+  const menu = document.getElementById('favFilterMenu');
+  if(!menu) return;
+  if(favListFilter && !favoriteLists.find(l=>l.id===favListFilter)){
+    // 選択中だったリストが無くなっていたら（ログアウト等）絞り込みを解除する
+    favListFilter = null;
+    setFavFilterLabel('お気に入り表示', false);
+  }
+  const itemHtml = (value, label, count) => `<button type="button" class="mt-select-menu-item${value===(favListFilter||'')?' active':''}" data-value="${escapeAttr(value)}" role="option">${escapeHtml(label)}${count!=null?` <span class="mt-select-menu-count">（${count}）</span>`:''}</button>`;
+  let html = itemHtml('', '全て表示');
+  if(!currentUser){
+    html += `<div class="mt-select-menu-section">ログインするとお気に入りリストで絞り込めます</div>`;
+  } else if(favoriteLists.length===0){
+    html += `<div class="mt-select-menu-section">まだお気に入りリストがありません</div>`;
+  } else {
+    html += favoriteLists.map(l=>itemHtml(l.id, l.name, l.entityIds.length)).join('');
+  }
+  menu.innerHTML = html;
+  menu.querySelectorAll('.mt-select-menu-item').forEach(item=>{
+    item.addEventListener('click', ()=>selectFavFilter(item.dataset.value));
+  });
+}
+const favFilterBtn = document.getElementById('favFilterBtn');
+favFilterBtn.addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  if(document.getElementById('favFilterWrap').classList.contains('open')) closeFavFilterMenu();
+  else openFavFilterMenu();
+});
+document.addEventListener('click', (ev)=>{
+  if(!ev.target.closest('#favFilterMenu') && !ev.target.closest('#favFilterBtn')) closeFavFilterMenu();
+});
+document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') closeFavFilterMenu(); });
+window.addEventListener('resize', closeFavFilterMenu);
+document.getElementById('mapControlsCluster').addEventListener('scroll', closeFavFilterMenu);
+
 // 221Bへの直行ボタン。地図をベーカー街221Bへ移動させつつ、地名ピンをタップした時と
 // 同じ小さいプレビューカードを開く（フルの詳細パネルはカードをタップした時だけ開く）。
 document.getElementById('bakerStreetBtn').addEventListener('click', ()=>{
@@ -2577,6 +2688,10 @@ function renderMarkers(){
     if(e.type==='place' && e.coords){
       if(coreOnlyFilter && e.relevance!=='core') return;
       if(workFilter && !(e.related||[]).includes(workFilter)) return;
+      if(favListFilter){
+        const list = favoriteLists.find(l=>l.id===favListFilter);
+        if(!list || !list.entityIds.includes(id)) return;
+      }
       const isSpecial = id === 'baker-street';
       const icon = isSpecial ? makeSpecialIcon() : (e.relevance==='peripheral' ? makePeripheralIcon() : (e.relevance==='misc' ? makeMiscIcon() : makeIcon()));
       const m = L.marker(e.coords,{icon, zIndexOffset: isSpecial ? 2000 : 0});
@@ -2666,7 +2781,9 @@ function renderIndex(){
     } else if(e.type==='place'){
       const passCore = !coreOnlyFilter || e.relevance==='core';
       const passWork = !workFilter || (e.related||[]).includes(workFilter);
-      if(passCore && passWork) groups.place.push(id);
+      const favList = favListFilter ? favoriteLists.find(l=>l.id===favListFilter) : null;
+      const passFav = !favListFilter || (favList && favList.entityIds.includes(id));
+      if(passCore && passWork && passFav) groups.place.push(id);
     } else {
       groups[e.type].push(id);
     }
@@ -3708,17 +3825,20 @@ function openFavoriteListsModal(entityId){
   if(!e) return;
   modalBody.innerHTML = `
     <h3>お気に入りリストに追加</h3>
-    <div class="modal-sub">「${escapeHtml(e.name)}」を追加したいリストにチェックを入れてください。</div>
+    <div class="modal-sub">「${escapeHtml(e.name)}」を追加したいリストにチェックを入れてください。リスト名の右の✏️から名前を変更できます。</div>
     <div class="checklist" id="favListCheckList">
       ${favoriteLists.length ? favoriteLists.map(l=>`
-        <label><input type="checkbox" data-fav-list-id="${l.id}" ${l.entityIds.includes(entityId)?'checked':''}> ${escapeHtml(l.name)} <span class="fav-list-count">（${l.entityIds.length}件）</span></label>
+        <div class="fav-list-row">
+          <label><input type="checkbox" data-fav-list-id="${l.id}" ${l.entityIds.includes(entityId)?'checked':''}> <span class="fav-list-name" data-fav-list-name="${l.id}">${escapeHtml(l.name)}</span> <span class="fav-list-count">（${l.entityIds.length}件）</span></label>
+          <button type="button" class="fav-list-rename-btn" data-fav-rename="${l.id}" title="リスト名を変更" aria-label="リスト名を変更">✏️</button>
+        </div>
       `).join('') : '<div class="alias-list-empty">まだリストがありません。下から新しく作成できます。</div>'}
     </div>
     <div class="field">
       <label>新しいリストを作る</label>
       <div class="geo-row"><input type="text" id="fav-new-list-name" placeholder="お気に入り${favoriteLists.length+1}"><button type="button" class="geo-search-btn" id="fav-new-list-create">作成して追加</button></div>
     </div>
-    <div class="modal-actions"><button class="modal-cancel" id="fav-modal-close">閉じる</button></div>`;
+    <div class="modal-actions"><button class="modal-cancel" id="fav-modal-close">確定</button></div>`;
   overlay.classList.add('open');
   document.getElementById('fav-modal-close').addEventListener('click', closeModal);
   document.querySelectorAll('#favListCheckList input[type=checkbox]').forEach(cb=>{
@@ -3730,6 +3850,48 @@ function openFavoriteListsModal(entityId){
       await safeSet(favoritesKey(), favoriteLists);
       showEntity(entityId, {fromTrail:true});
       renderIndex();
+      // 地図の絞り込みで今まさに選ばれているリストが更新された場合は、
+      // 地図上のピンにもその場で反映する
+      if(favListFilter === list.id) renderMarkers();
+    });
+  });
+  document.querySelectorAll('#favListCheckList .fav-list-rename-btn').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.preventDefault();
+      const listId = btn.dataset.favRename;
+      const list = favoriteLists.find(l=>l.id===listId);
+      if(!list) return;
+      const nameSpan = Array.from(modalBody.querySelectorAll('.fav-list-name')).find(el=>el.dataset.favListName===listId);
+      if(!nameSpan || nameSpan.tagName === 'INPUT') return;
+      let done = false;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'fav-list-rename-input';
+      input.value = list.name;
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.select();
+      const finish = async (save)=>{
+        if(done) return;
+        done = true;
+        if(save){
+          const newName = input.value.trim();
+          if(newName && newName !== list.name){
+            list.name = newName;
+            await safeSet(favoritesKey(), favoriteLists);
+            renderIndex();
+            // 地図の絞り込みで今まさに選ばれているリストの名前が変わった場合は、
+            // 絞り込みボタンのラベルもその場で追従させる
+            if(favListFilter === listId) setFavFilterLabel(newName, true);
+          }
+        }
+        openFavoriteListsModal(entityId);
+      };
+      input.addEventListener('keydown', (ev2)=>{
+        if(ev2.key==='Enter'){ ev2.preventDefault(); finish(true); }
+        else if(ev2.key==='Escape'){ ev2.preventDefault(); finish(false); }
+      });
+      input.addEventListener('blur', ()=>finish(true));
     });
   });
   document.getElementById('fav-new-list-create').addEventListener('click', async ()=>{
@@ -4580,6 +4742,7 @@ document.addEventListener('click', (ev)=>{ if(!ev.target.closest('.action-btns')
   renderJournalMarkers();
   renderIndex();
   populateWorkFilterSelect();
+  populateFavFilterMenu();
   // URLに ?id=項目ID が付いていれば、その項目の詳細を開いた状態で起動する
   // （SNSなどで共有された個別ページのリンクから直接開けるようにするため）
   const initialEntityId = new URLSearchParams(location.search).get('id');
