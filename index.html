@@ -3996,6 +3996,7 @@ function renderIndex(){
   html += `</div></div>`;
 
   html += `<div class="site-license">本サイトの説明文は <a href="https://creativecommons.org/licenses/by/4.0/deed.ja" target="_blank" rel="noopener noreferrer">CC BY 4.0</a> で公開しています（出典を明記すれば自由にご利用いただけます）。画像は個別に出典・ライセンスを表示しています。</div>`;
+  html += `<div class="site-license">運営者のX（旧Twitter）: <a href="https://x.com/221bkcolrehs" target="_blank" rel="noopener noreferrer">@221bkcolrehs</a></div>`;
   html += `<div class="site-license"><button class="link-btn" id="openLegalBtn">利用規約・プライバシーポリシー</button>（本サイトは個人が趣味で開発・運営しています）</div>`;
   scrollEl.innerHTML = html;
   document.getElementById('openLegalBtn')?.addEventListener('click', openLegalModal);
@@ -5634,7 +5635,7 @@ function renderEntityJournalSection(entityId){
   const html = list.length ? list.map(j=>renderJournalCard(j)).join('') : `<p class="empty-msg">${emptyMsg}</p>`;
   return `
     <div class="journal-section">
-      <div class="journal-section-head"><h4>${isPlace ? '訪問記録' : '感想・コメント'}（${list.length}件）</h4><button class="add-journal-btn" id="addEntityJournalBtn">＋ ${isPlace ? '追加' : '感想を書く'}</button></div>
+      <div class="journal-section-head"><h4>${isPlace ? '訪問記録・コメント' : '感想・コメント'}（${list.length}件）</h4><button class="add-journal-btn" id="addEntityJournalBtn">＋ ${isPlace ? '追加' : '感想を書く'}</button></div>
       ${html}
     </div>`;
 }
@@ -5674,7 +5675,7 @@ function openJournalModal(prefill){
   let coords = (typeof prefill.lat==='number') ? [prefill.lat, prefill.lng] : null;
   let uploadedImageData = null;
   modalBody.innerHTML = `
-    <h3>${isPlaceKind ? '訪問記録を追加' : '感想を投稿'}</h3>
+    <h3>${isPlaceKind ? '訪問記録・コメントを追加' : '感想を投稿'}</h3>
     <div class="modal-sub">${isPlaceKind ? 'その場で保存されます。' : '訪れたことがなくても、読んだ感想や気づいたことを投稿できます。'}</div>
     <div class="field"><label>${isPlaceKind ? '場所の名前' : '対象'}</label><input type="text" id="j-name" value="${prefill.name?escapeAttr(prefill.name):''}" ${prefill.entityId?'readonly':''}></div>
     ${!prefill.entityId ? `
