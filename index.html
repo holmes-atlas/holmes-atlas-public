@@ -2173,8 +2173,30 @@ function draftKey(formType, id){
   const uid = currentUser ? currentUser.id : 'anon';
   return 'holmes-atlas-draft:' + uid + ':' + formType + ':' + (id || 'new');
 }
+// 下書きキーの一覧（会員ごと）を別途1件のlocalStorageアイテムとして保持しておく
+// 索引。myDraftEntries（編集一覧画面）がlocalStorage.lengthで全件走査しなくても
+// 済むようにするための補助データで、実データ（下書きの中身）自体は従来通り
+// draftKey()の場所にそのまま保存する。saveDraft/clearDraftの2箇所でだけ
+// 更新するので、索引と実データがずれる心配はない。
+function draftIndexKey(uid){ return 'holmes-atlas-draft-index:' + uid; }
+function readDraftIndex(uid){
+  try{
+    const raw = localStorage.getItem(draftIndexKey(uid));
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function writeDraftIndex(uid, keys){
+  try{ localStorage.setItem(draftIndexKey(uid), JSON.stringify(keys)); }catch(e){}
+}
 function saveDraft(formType, id, data){
-  try{ localStorage.setItem(draftKey(formType, id), JSON.stringify({data, savedAt: Date.now()})); }catch(e){}
+  const uid = currentUser ? currentUser.id : 'anon';
+  const key = draftKey(formType, id);
+  try{
+    localStorage.setItem(key, JSON.stringify({data, savedAt: Date.now()}));
+    const keys = readDraftIndex(uid);
+    if(!keys.includes(key)){ keys.push(key); writeDraftIndex(uid, keys); }
+  }catch(e){}
 }
 function loadDraft(formType, id){
   try{
@@ -2185,7 +2207,10 @@ function loadDraft(formType, id){
   }catch(e){ return null; }
 }
 function clearDraft(formType, id){
-  try{ localStorage.removeItem(draftKey(formType, id)); }catch(e){}
+  const uid = currentUser ? currentUser.id : 'anon';
+  const key = draftKey(formType, id);
+  try{ localStorage.removeItem(key); }catch(e){}
+  writeDraftIndex(uid, readDraftIndex(uid).filter(k=>k!==key));
 }
 // fieldIds: 自動保存の対象にする<input>/<textarea>のid一覧
 // getExtra: フォーム部品以外の状態（公開範囲トグル等）も保存したい場合に使う
@@ -2251,6 +2276,10 @@ document.addEventListener('click', (ev)=>{
   const img = ev.target.closest('.photo-block img, .entity-img, .journal-card img');
   if(img && !ev.target.closest('.photo-del-btn')) openLightbox(img.src);
 });
+// 2点間の大圏距離(km)を返す共通ユーティリティ。zoomForCoords（地図のズーム値決定）
+// と、下の経由地並び替え（orderStopsNearestNeighbor）・現在地から近い場所の検索
+// （nearbyPanel）の両方から使う。かつては用途ごとに同じ内容の関数が2箇所に
+// 定義されていたが、1つにまとめてある。
 function haversineKm(a,b){
   const toRad = d=>d*Math.PI/180, R=6371;
   const dLat=toRad(b[0]-a[0]), dLon=toRad(b[1]-a[1]);
@@ -3161,14 +3190,8 @@ function openRoutePickStopsModal(stops, travelMode){
 // 組めない）。そのため経由地の並び替えは、出発地の座標が分かっている場合に限り
 // こちら側で行ってから、プレーンな lat,lng|lat,lng|... の形でURLに渡す。
 // 参考：https://developers.google.com/maps/documentation/urls/get-started
-function haversineKm(a, b){
-  const R = 6371;
-  const toRad = d => d * Math.PI / 180;
-  const dLat = toRad(b[0]-a[0]);
-  const dLng = toRad(b[1]-a[1]);
-  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLng/2)**2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
+// （距離計算のhaversineKmは共通ユーティリティとして上の方（zoomForCoordsの前）に
+// 1つだけ定義している）
 // 巡回セールスマン問題の厳密解ではなく、「今いる場所から一番近い未訪問地点へ」を
 // 繰り返す最近傍法という簡易な近似。地点数（最大25件程度）を考えれば十分実用的。
 function orderStopsNearestNeighbor(startCoords, stopsArr){
@@ -3484,7 +3507,15 @@ function fixMapSize(){ map.invalidateSize(); }
 window.addEventListener('load', fixMapSize);
 window.addEventListener('resize', fixMapSize);
 if(document.fonts && document.fonts.ready){ document.fonts.ready.then(fixMapSize); }
-setTimeout(fixMapSize,150); setTimeout(fixMapSize,600);
+// フォント読み込みやレイアウト確定待ちを150ms/600msといった決め打ちの時間で
+// 行っていたが、環境によってはそれでもズレることがあるため、#map自身の実際の
+// 箱サイズの変化を直接監視するResizeObserverに置き換える。フォント確定・
+// サイドパネルの開閉・端末の向き変更など、#mapの表示サイズが変わるあらゆる
+// タイミングを時間指定なしで捉えられる。
+if(typeof ResizeObserver !== 'undefined'){
+  const mapResizeObserver = new ResizeObserver(()=>{ map.invalidateSize(); });
+  mapResizeObserver.observe(document.getElementById('map'));
+}
 
 function makeIcon(){
   return L.divIcon({className:'leaflet-holmes-icon',
@@ -4922,22 +4953,36 @@ const DRAFT_KEY_PREFIX = 'holmes-atlas-draft:';
 function myDraftEntries(){
   const uid = currentUser ? currentUser.id : 'anon';
   const prefix = DRAFT_KEY_PREFIX + uid + ':';
-  const out = [];
+  let keys;
   try{
-    for(let i=0;i<localStorage.length;i++){
-      const key = localStorage.key(i);
-      if(!key || !key.startsWith(prefix)) continue;
-      const rest = key.slice(prefix.length); // "<formType>:<id>"
-      const sepIdx = rest.indexOf(':');
-      if(sepIdx<0) continue;
-      const formType = rest.slice(0, sepIdx);
-      const id = rest.slice(sepIdx+1);
-      let parsed;
-      try{ parsed = JSON.parse(localStorage.getItem(key)); }catch(e){ continue; }
-      if(!parsed || !parsed.data) continue;
-      out.push({formType, id, data:parsed.data, savedAt:parsed.savedAt||0, key});
+    if(localStorage.getItem(draftIndexKey(uid)) === null){
+      // 索引がまだ存在しない場合（この索引方式を導入する前から下書きがある会員、
+      // など）に限り、最初の1回だけ従来通りlocalStorage全体を走査して索引を
+      // 作り直す。以降はsaveDraft/clearDraftが索引を保守するので、この全件走査は
+      // 二度と発生しない。
+      keys = [];
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(k && k.startsWith(prefix)) keys.push(k);
+      }
+      writeDraftIndex(uid, keys);
+    } else {
+      keys = readDraftIndex(uid);
     }
-  }catch(e){}
+  }catch(e){ keys = []; }
+  const out = [];
+  keys.forEach(key=>{
+    if(!key || !key.startsWith(prefix)) return; // 別会員分など、万一紛れ込んだキーは無視
+    const rest = key.slice(prefix.length); // "<formType>:<id>"
+    const sepIdx = rest.indexOf(':');
+    if(sepIdx<0) return;
+    const formType = rest.slice(0, sepIdx);
+    const id = rest.slice(sepIdx+1);
+    let parsed;
+    try{ parsed = JSON.parse(localStorage.getItem(key)); }catch(e){ return; }
+    if(!parsed || !parsed.data) return;
+    out.push({formType, id, data:parsed.data, savedAt:parsed.savedAt||0, key});
+  });
   out.sort((a,b)=>b.savedAt-a.savedAt);
   return out;
 }
