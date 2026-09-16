@@ -525,6 +525,9 @@ body.map-picking .leaflet-container{cursor:crosshair;}
    2クラス指定で詳細度を上げている。 */
 .route-pick-btn.route-pick-waypoint{flex:1 1 100%;text-align:left;margin-top:2px;white-space:normal;}
 .route-pick-waypoint.active{background:var(--parchment-2);border-color:var(--brass);color:var(--charcoal);}
+/* 「現在地」は一覧の実在の地点とは別枠なので、背景を少し変えて区別する
+   （出発地専用＝○目的地ボタンを持たない一行だけの特別枠）。 */
+.route-pick-row-current{background:var(--parchment-2);}
 @media (max-width:480px){
   .route-pick-row{flex-direction:column;align-items:flex-start;gap:6px;}
   .route-pick-btns{width:100%;}
@@ -2727,6 +2730,11 @@ function populateFavFilterMenu(){
 // Googleマップの経由地URLには上限（出発地・目的地を含め合計25地点程度）が
 // あるため、超える場合は先頭から25件に切り詰めてトーストで知らせる。
 const GMAPS_ROUTE_MAX_STOPS = 25;
+// 出発地・目的地を自分で選ぶモーダル（openRoutePickStopsModal）で、
+// 「現在地」を出発地として選べるようにするための特別なid。DATA上の実在の
+// 地点idとは絶対に衝突しない値にしてある。目的地・経由地には現在地を
+// 選べないようにする（Googleマップ側もdestinationには実在の地点が必要）。
+const ROUTE_CURRENT_LOCATION_ID = '__route_current_location__';
 function openRouteForFavoriteList(listId){
   const list = favoriteLists.find(l=>l.id===listId);
   if(!list) return;
@@ -2798,6 +2806,16 @@ function openRoutePickStopsModal(stops){
   // チェックボックス自体を出さない（出発地・目的地は経由地の概念とは別に、
   // 必ずルートに含まれるため）。
   let waypointIncluded = new Set(stops.map(e=>e.id));
+  // 「現在地」は一覧の地点とは別枠の特別な行として先頭に固定表示する。出発地
+  // にしか選べない（目的地・経由地のボタンは出さない）。実際にその場にいる
+  // 時に使う想定。
+  const currentLocationRowHtml = () => `
+    <div class="route-pick-row route-pick-row-current">
+      <span class="route-pick-name">📍 現在地</span>
+      <div class="route-pick-btns">
+        <button type="button" class="route-pick-btn route-pick-origin${originId===ROUTE_CURRENT_LOCATION_ID?' active':''}" data-role="origin" data-id="${ROUTE_CURRENT_LOCATION_ID}">◎ 出発地</button>
+      </div>
+    </div>`;
   const rowHtml = (e) => {
     const isEndpoint = e.id===originId || e.id===destId;
     const checked = waypointIncluded.has(e.id);
@@ -2814,7 +2832,7 @@ function openRoutePickStopsModal(stops){
   const renderList = () => {
     const listEl = document.getElementById('route-pick-list');
     if(!listEl) return;
-    listEl.innerHTML = stops.map(rowHtml).join('');
+    listEl.innerHTML = currentLocationRowHtml() + stops.map(rowHtml).join('');
     listEl.querySelectorAll('.route-pick-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const role = btn.dataset.role;
@@ -2835,7 +2853,7 @@ function openRoutePickStopsModal(stops){
     const summaryEl = document.getElementById('route-pick-summary');
     const goBtn = document.getElementById('route-pick-go');
     if(summaryEl){
-      const originName = originId ? DATA[originId].name : '（未選択）';
+      const originName = !originId ? '（未選択）' : (originId===ROUTE_CURRENT_LOCATION_ID ? '現在地' : DATA[originId].name);
       const destName = destId ? DATA[destId].name : '（未選択）';
       const waypointCount = stops.filter(e=>e.id!==originId && e.id!==destId && waypointIncluded.has(e.id)).length;
       summaryEl.innerHTML = `出発地：<strong>${escapeHtml(originName)}</strong>　→　経由地：${waypointCount}件（Googleマップが最短順に自動調整）　→　目的地：<strong>${escapeHtml(destName)}</strong>`;
@@ -2847,7 +2865,7 @@ function openRoutePickStopsModal(stops){
     <div class="modal-question">地点の一覧から、出発地と目的地をそれぞれ1つずつ選んでください</div>
     <div class="field">
       <div class="hint" id="route-pick-summary"></div>
-      <div class="hint" style="margin-top:6px;">出発地・目的地以外の地点は、チェックを外すと今回のルートから除外できます（既定では全て経由地に含まれます）。</div>
+      <div class="hint" style="margin-top:6px;">出発地・目的地以外の地点は、チェックを外すと今回のルートから除外できます（既定では全て経由地に含まれます）。「現在地」を出発地に選ぶと、実際にその場で開いた時に現在地からのルートになります。</div>
     </div>
     <div class="route-pick-list" id="route-pick-list"></div>
     <div class="modal-actions">
@@ -2887,13 +2905,18 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
 // 入っている地点だけを経由地として使う。出発地・目的地以外で除外された地点は
 // 今回のルートに一切含めない。経由地の巡回順はoptimize:trueでGoogleマップに
 // 任せる（ユーザーが選んだのは「どこから」「どこへ」「何を回るか」だけで、
-// 途中の順番までは指定していないため）。
+// 途中の順番までは指定していないため）。originIdがROUTE_CURRENT_LOCATION_ID
+// （「現在地」）の場合はorigin座標を持たないので、URLに&origin=を含めず
+// Googleマップ側の現在地を使わせる（openGoogleMapsRouteのuseCurrentLocation=true
+// と同じ考え方）。
 function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds){
-  const origin = stops.find(e=>e.id===originId);
+  const useCurrentLocation = originId === ROUTE_CURRENT_LOCATION_ID;
+  const origin = useCurrentLocation ? null : stops.find(e=>e.id===originId);
   const dest = stops.find(e=>e.id===destId);
-  if(!origin || !dest) return;
+  if((!useCurrentLocation && !origin) || !dest) return;
   const includedSet = waypointIncludedIds instanceof Set ? waypointIncludedIds : new Set(waypointIncludedIds||[]);
-  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${origin.coords.join(',')}&destination=${dest.coords.join(',')}`;
+  let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${dest.coords.join(',')}`;
+  if(!useCurrentLocation) url += `&origin=${origin.coords.join(',')}`;
   const waypoints = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id)).map(e=>e.coords.join(',')).join('|');
   if(waypoints) url += `&waypoints=${encodeURIComponent('optimize:true|'+waypoints)}`;
   showToast('Googleマップを開いています…');
