@@ -463,6 +463,15 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .map-pick-banner button{flex:none;background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 12px;border-radius:14px;font-size:.78rem;cursor:pointer;font-family:inherit;}
 .map-pick-banner button:hover{background:rgba(255,255,255,.28);}
 body.map-picking .leaflet-container{cursor:crosshair;}
+/* .modal-shellは.modal本体と同じ最大幅・最大高さを持たせた「透明な外枠」。
+   .modal-close-xをこの外枠基準の絶対配置にすることで、.modalの内容が
+   何であっても常にその右上に✕が乗る（.modal自体は個々のモーダルの
+   innerHTMLで毎回まるごと差し替わるため、✕をその中に置けない）。 */
+.modal-shell{position:relative;max-width:520px;width:100%;max-height:88vh;}
+.modal-close-x{position:absolute;top:6px;right:6px;z-index:1;background:none;border:none;
+  color:var(--slate);font-size:1.05rem;line-height:1;cursor:pointer;padding:7px 10px;
+  border-radius:3px;-webkit-tap-highlight-color:transparent;}
+.modal-close-x:hover{background:rgba(43,38,32,.08);color:var(--charcoal);}
 .modal{background:var(--parchment);color:var(--charcoal);border-radius:5px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 24px 26px;border-top:4px solid var(--brass);}
 .modal h3{font-family:'Playfair Display',serif;margin:0 0 4px;font-size:1.25rem;color:var(--ink);}
 .modal .modal-sub{font-size:.82rem;opacity:.7;margin-bottom:16px;}
@@ -471,6 +480,16 @@ body.map-picking .leaflet-container{cursor:crosshair;}
    決めてほしい問い）である場合はこちらを使う。文字を大きく・太く・地の色（薄い
    グレーではなく本文色）にして、下の詳細説明（.hint）よりはっきり目立たせる。 */
 .modal .modal-question{font-size:1.05rem;font-weight:700;color:var(--charcoal);margin-bottom:14px;line-height:1.4;}
+/* ルートの巡り方を選ぶモーダル（openRouteOriginConfirmModal）専用。3つの
+   選択肢を優劣なく同じ見た目のカードとして縦に並べる（太字の見出し＋
+   1〜2行の説明）。以前は2つだけ.modal-cancel/.modal-submitの実ボタンで、
+   3つ目だけ地味なテキストリンクという非対称な扱いだったのを解消した。 */
+.route-origin-options{display:flex;flex-direction:column;gap:10px;}
+.route-origin-option{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);
+  border-radius:4px;padding:12px 14px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;}
+.route-origin-option:hover{background:#f7ecd0;border-color:var(--brass);}
+.route-origin-option-title{display:block;font-weight:700;font-size:.95rem;color:var(--charcoal);margin-bottom:4px;}
+.route-origin-option-desc{display:block;font-size:.78rem;color:var(--slate);line-height:1.55;}
 .field{margin-bottom:14px;}
 .field label{display:block;font-size:.82rem;font-weight:600;color:var(--slate);margin-bottom:4px;}
 .field input[type=text],.field input[type=date],.field textarea,.field select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:3px;font-size:.9rem;background:#fff;}
@@ -745,7 +764,15 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
-  <div class="modal" id="modalBody"></div>
+  <!-- .modal（#modalBody）の中身は、モーダルを開く関数ごとにinnerHTMLで
+       まるごと差し替えられる。そのため✕ボタンを.modal自身の子として置くと
+       毎回消えてしまう。.modal-shellはその外側の、常に残るラッパーとして
+       ✕ボタンと.modalを一緒に包み、✕ボタンだけ.modalの右上に絶対配置する
+       （全モーダル共通。個々のモーダルのHTMLは一切変更不要）。 -->
+  <div class="modal-shell">
+    <button type="button" class="modal-close-x" id="modalCloseX" aria-label="閉じる" title="閉じる">✕</button>
+    <div class="modal" id="modalBody"></div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 <div class="lightbox-overlay" id="lightboxOverlay">
@@ -2759,23 +2786,30 @@ function openRouteForFavoriteList(listId){
   }
   openRouteOriginConfirmModal(stops);
 }
-// 「現在地を出発点にするか」を確認する小さなモーダル。既存のモーダル基盤
-// （overlay/modalBody/closeModal）をそのまま使う。背景クリックで閉じれば
-// （overlay.addEventListenerで既に全モーダル共通で配線済み）、Googleマップは
-// 開かずキャンセル扱いになる。
+// ルートの巡り方を選ぶ小さなモーダル。3つの選び方（登録順／現在地から最短／
+// 自分で指定）を上下・優劣なく並んだ選択肢カードとして対等に見せる（以前は
+// 「はい/いいえ」の二択ボタン＋3つ目だけ地味なテキストリンク、という非対称な
+// 見た目だったのを統一した）。既存のモーダル基盤（overlay/modalBody/
+// closeModal）をそのまま使う。背景クリック・Escape・右上の✕ボタン（全モーダル
+// 共通）のいずれで閉じても、Googleマップは開かずキャンセル扱いになる。
 function openRouteOriginConfirmModal(stops){
   const orderNames = stops.map(e=>e.name).join(' → ');
   modalBody.innerHTML = `
     <h3>ルートの出発地点</h3>
-    <div class="modal-question">現在地を出発点にしますか？</div>
-    <div class="field">
-      <div class="hint">「いいえ」：<strong>リストの並び順</strong>（登録順。リスト編集画面でドラッグして変えられます）通りに、最初の地点から最後の地点まで順番に巡るルートになります。<br>現在の並び順：${escapeHtml(orderNames)}</div>
-      <div class="hint" style="margin-top:6px;">「はい」：現在地を出発点にし、最後の地点（目的地）までの経由順は、Googleマップ側で最短になるよう自動調整します。</div>
-      <div class="hint" style="margin-top:6px;">どちらでもなく、<button type="button" class="link-btn" id="route-origin-pick">出発地・目的地を自分で指定する</button>こともできます。</div>
-    </div>
-    <div class="modal-actions">
-      <button class="modal-cancel" id="route-origin-no">いいえ（登録順で巡る）</button>
-      <button class="modal-submit" id="route-origin-yes">はい（現在地から最短で）</button>
+    <div class="modal-question">巡り方を選んでください</div>
+    <div class="route-origin-options">
+      <button type="button" class="route-origin-option" id="route-origin-no">
+        <span class="route-origin-option-title">登録順で巡る</span>
+        <span class="route-origin-option-desc"><strong>リストの並び順</strong>（登録順。リスト編集画面でドラッグして変えられます）通りに、最初の地点から最後の地点まで順番に巡ります。<br>現在の並び順：${escapeHtml(orderNames)}</span>
+      </button>
+      <button type="button" class="route-origin-option" id="route-origin-yes">
+        <span class="route-origin-option-title">現在地から最短で</span>
+        <span class="route-origin-option-desc">現在地を出発点にし、最後の地点（目的地）までの経由順を、Googleマップ側で最短になるよう自動調整します。</span>
+      </button>
+      <button type="button" class="route-origin-option" id="route-origin-pick">
+        <span class="route-origin-option-title">出発地・目的地を自分で指定する</span>
+        <span class="route-origin-option-desc">地点の一覧から、出発地・目的地・経由地に含める地点を自由に選べます（現在地を出発地にすることもできます）。</span>
+      </button>
     </div>`;
   overlay.classList.add('open');
   document.getElementById('route-origin-no').addEventListener('click', ()=>{
@@ -3810,6 +3844,15 @@ function openLegalModal(){
   document.getElementById('legal-close').addEventListener('click', closeModal);
 }
 overlay.addEventListener('click', ev=>{ if(ev.target===overlay) closeModal(); });
+// ✕ボタンは.modal-shellの静的マークアップ（HTML側）に1つだけ存在し、個々の
+// モーダルのinnerHTML差し替えでは消えないので、配線もここで一度だけ行えばよい。
+const modalCloseXBtn = document.getElementById('modalCloseX');
+if(modalCloseXBtn){
+  modalCloseXBtn.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    closeModal();
+  });
+}
 
 function relatedChecklist(excludeId, preselected=[]){
   const ids = Object.keys(DATA).filter(id=>id!==excludeId).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
