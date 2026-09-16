@@ -192,7 +192,15 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
    分割し、スクロールは中の.mt-select-menu-bodyだけに閉じ込める。ヘッダーを
    持たない通常のメニュー（お気に入り絞り込みなど）は今まで通り.mt-select-menu
    自体がそのままスクロール領域になる。 */
-.mt-select-menu.mt-select-menu-with-header{display:flex;flex-direction:column;max-height:320px;overflow:hidden;padding:0;}
+/* ★バグの元凶だった箇所：ここでdisplay:flexを無条件に指定してしまうと、
+   .mt-select-menu-with-header自体が常時付いている構造クラス（開閉トグルの
+   .showではない）なので、基本形の.mt-select-menu{display:none}より詳細度が
+   高いこのルールが常に勝ってしまい、.showの有無にかかわらずメニューが常に
+   表示された状態になっていた（＝サイトを開いた瞬間からメニューが開いた
+   ままに見え、✕ボタンで.showを外しても見た目が変わらなかった原因）。
+   displayの指定はここでは行わず、.showが付いた時だけ下のルールで
+   display:flexにする。 */
+.mt-select-menu.mt-select-menu-with-header{flex-direction:column;max-height:320px;overflow:hidden;padding:0;}
 .mt-select-menu.mt-select-menu-with-header.show{display:flex;}
 .mt-select-menu-header{display:flex;align-items:center;justify-content:space-between;flex:none;
   padding:6px 4px 6px 12px;border-bottom:1px solid var(--line);background:var(--parchment-2);}
