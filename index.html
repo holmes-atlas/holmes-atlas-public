@@ -573,7 +573,9 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .route-leg-via{display:block;font-size:.74rem;color:var(--slate);margin-top:2px;}
 .route-leg-open-btn{flex:none;white-space:nowrap;}
 .route-leg-open-btn.modal-submit{background:var(--teal);}
-.route-leg-open-btn:disabled{opacity:.55;cursor:default;}
+/* 開いた後も押せなくはしない（何度でも開き直せるように）。見た目だけ、
+   塗りつぶしから縁取りだけの控えめな表示に変えて「開いた」と分かるようにする。 */
+.route-leg-open-btn.modal-submit.opened{background:none;border:1px solid var(--teal);color:var(--teal);}
 /* 「現在地」は一覧の実在の地点とは別枠なので、背景を少し変えて区別する
    （出発地専用＝○目的地ボタンを持たない一行だけの特別枠）。 */
 .route-pick-row-current{background:var(--parchment-2);}
@@ -3183,7 +3185,9 @@ function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds)
 // 経由地が上限を超え、区間が2つ以上に分かれた場合に開くモーダル。区間ごとに
 // 「開く」ボタンを縦に並べ、押すとその区間だけのGoogleマップのリンクを新しい
 // タブで開く（クリック直後の同期処理なのでポップアップブロックの心配がない）。
-// 開いた区間はボタンを「開きました」表示にして、どこまで進んだか分かるようにする。
+// 開いた区間には✓を添えてどこまで進んだか分かるようにするが、ボタン自体は
+// 無効化しない（タブを間違えて閉じてしまった、もう一度確認したい、といった
+// 場合に何度でも押し直せるようにするため）。
 function openMultiLegRouteModal(legs){
   const limit = gmapsWaypointLimit();
   const rowsHtml = legs.map((leg,i)=>{
@@ -3204,18 +3208,19 @@ function openMultiLegRouteModal(legs){
   }).join('');
   modalBody.innerHTML = `
     <h3>ルートを${legs.length}つの区間に分けました</h3>
-    <div class="modal-sub">Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください。</div>
+    <div class="modal-sub">Googleマップは一度に開けるルートの経由地数に上限があるため（お使いの環境では${limit}件まで）、区間ごとにリンクを分けています。ある区間の終点が、そのまま次の区間の出発点になります。区間ごとに開いて、それぞれ別のタブでルート案内をご利用ください（何度でも開き直せます）。</div>
     <div class="route-leg-list">${rowsHtml}</div>
     <div class="modal-actions"><button class="modal-cancel" id="route-leg-close">閉じる</button></div>`;
   overlay.classList.add('open');
   modalBody.querySelectorAll('[data-leg-idx]').forEach(btn=>{
+    const originalLabel = btn.textContent;
     btn.addEventListener('click', ()=>{
       const i = parseInt(btn.dataset.legIdx, 10);
       const leg = legs[i];
       showToast(`区間${i+1}のGoogleマップを開いています…`);
       window.open(buildGmapsLegUrl(leg), '_blank', 'noopener,noreferrer');
-      btn.textContent = '開きました ✓';
-      btn.disabled = true;
+      btn.textContent = originalLabel + ' ✓';
+      btn.classList.add('opened');
     });
   });
   document.getElementById('route-leg-close').addEventListener('click', closeModal);
