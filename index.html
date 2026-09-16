@@ -175,7 +175,15 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
    している）の外に置いたsiblingで、開いたときにJSでボタンの真上へ位置を
    合わせる。帯の中に置くと横スクロール用のoverflow設定に巻き込まれて、
    上にはみ出す部分が見えなくなってしまうため。 */
-.mt-select-menu{position:absolute;z-index:600;min-width:180px;max-width:min(320px,80vw);
+/* position:fixed（ビューポート基準）にしている。以前はposition:absoluteで
+   .stage（帯の入れ物）を基準にしていたが、実機で表示絞り込みメニューが
+   帯のすぐ上ではなく画面の上の方（検索バーの近く）に開いてしまう不具合が
+   報告された。原因を.stage側のレイアウト計算まで遡って特定するより、
+   そもそも.stageのrectに依存しない作りに変える方が確実だと判断し、
+   ボタン自身のgetBoundingClientRect()とビューポートのサイズだけで
+   位置を決めるようにした（JS側のopenViewFilterMenu/openFavFilterMenuも
+   同様に変更済み）。 */
+.mt-select-menu{position:fixed;z-index:600;min-width:180px;max-width:min(320px,80vw);
   max-height:280px;overflow-y:auto;background:var(--parchment);border:1px solid var(--line);
   border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);display:none;}
 .mt-select-menu.show{display:block;}
@@ -2418,16 +2426,17 @@ function openViewFilterMenu(){
   const btn = document.getElementById('viewFilterBtn');
   const menu = document.getElementById('viewFilterMenu');
   const wrap = document.getElementById('viewFilterWrap');
-  const stage = document.querySelector('.stage');
-  if(!btn || !menu || !stage) return;
+  if(!btn || !menu) return;
   // ★開くたびに作り直し、✓マーク（.active）を今のviewFilterValueに合わせて
   // 必ず最新化する（クリックで選んだ直後は個々のボタンのDOMまでは書き換えていない
   // ため、開き直したタイミングでここできちんと揃える）
   populateViewFilterMenu();
+  // position:fixedにしたので、ボタン自身のgetBoundingClientRect()と
+  // ビューポートのサイズ（window.innerWidth/innerHeight）だけで位置を
+  // 決める。.stageのrectには依存しない（理由はCSS側のコメント参照）。
   const br = btn.getBoundingClientRect();
-  const sr = stage.getBoundingClientRect();
-  menu.style.right = Math.max(8, sr.right - br.right) + 'px';
-  menu.style.bottom = (sr.bottom - br.top + 8) + 'px';
+  menu.style.right = Math.max(8, window.innerWidth - br.right) + 'px';
+  menu.style.bottom = Math.max(8, window.innerHeight - br.top + 8) + 'px';
   menu.classList.add('show');
   wrap.classList.add('open');
   btn.setAttribute('aria-expanded','true');
@@ -2602,13 +2611,12 @@ function openFavFilterMenu(){
   const btn = document.getElementById('favFilterBtn');
   const menu = document.getElementById('favFilterMenu');
   const wrap = document.getElementById('favFilterWrap');
-  const stage = document.querySelector('.stage');
-  if(!btn || !menu || !stage) return;
+  if(!btn || !menu) return;
   populateFavFilterMenu();
+  // viewFilterMenuと同じ理由でposition:fixed＋ビューポート基準に統一。
   const br = btn.getBoundingClientRect();
-  const sr = stage.getBoundingClientRect();
-  menu.style.right = Math.max(8, sr.right - br.right) + 'px';
-  menu.style.bottom = (sr.bottom - br.top + 8) + 'px';
+  menu.style.right = Math.max(8, window.innerWidth - br.right) + 'px';
+  menu.style.bottom = Math.max(8, window.innerHeight - br.top + 8) + 'px';
   menu.classList.add('show');
   wrap.classList.add('open');
   btn.setAttribute('aria-expanded','true');
