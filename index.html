@@ -477,6 +477,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
   border-radius:3px;-webkit-tap-highlight-color:transparent;}
 .modal-close-x:hover{background:rgba(43,38,32,.08);color:var(--charcoal);}
 .modal{background:var(--parchment);color:var(--charcoal);border-radius:5px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 24px 26px;border-top:4px solid var(--brass);}
+/* #modalBody(=.modal)はモーダルを開いた瞬間にJSからtabindex="-1"経由で
+   プログラム的にフォーカスされる（キーボード操作でのフォーカスではないため、
+   コンテナ全体を囲む太い輪郭は見た目上うるさいだけなので消す。個々のボタンや
+   入力欄自体のフォーカスリングは通常通り表示される）。 */
+#modalBody:focus{outline:none;}
 .modal h3{font-family:'Playfair Display',serif;margin:0 0 4px;font-size:1.25rem;color:var(--ink);}
 .modal .modal-sub{font-size:.82rem;opacity:.7;margin-bottom:16px;}
 /* 使い方ガイド（openUsageGuideModal）専用。長文になるので、見出し＋本文の
@@ -647,6 +652,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .mybook-track-head{font-family:'Playfair Display',serif;font-weight:600;font-size:.95rem;color:var(--ink);margin-bottom:8px;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink-2);color:var(--parchment);padding:10px 20px;border-radius:4px;border:1px solid var(--brass);font-size:.88rem;z-index:3000;opacity:0;pointer-events:none;transition:opacity .25s ease;}
+/* 通信が切れたときに常時表示する帯。トーストと違って自動で消えず、オンラインに
+   戻るまで出し続ける（地図タイルや投稿の送受信が裏で失敗し続けているのに、
+   利用者からは理由が分からないまま、という状態を避けるため）。 */
+.offline-banner{position:fixed;top:0;left:0;right:0;z-index:4000;background:var(--burgundy);color:#fff;font-size:.82rem;text-align:center;padding:8px 14px;display:none;box-shadow:0 2px 8px rgba(0,0,0,.25);}
+.offline-banner.show{display:block;}
 .lightbox-overlay{position:fixed;inset:0;background:rgba(10,13,18,.92);display:none;align-items:center;justify-content:center;z-index:5000;padding:30px;cursor:zoom-out;}
 .lightbox-overlay.open{display:flex;}
 .lightbox-overlay img{max-width:100%;max-height:100%;object-fit:contain;border-radius:3px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
@@ -706,6 +716,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 </style>
 </head>
 <body>
+<div class="offline-banner" id="offlineBanner" role="status" aria-live="polite">📡 オフラインです。地図タイルの読み込みなど、一部の機能が正しく動作しない可能性があります。</div>
 <div class="app">
   <div class="header">
     <svg class="seal" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="#ab8347" stroke-width="2"/><circle cx="20" cy="20" r="6" fill="#ab8347"/></svg>
@@ -727,7 +738,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <div class="index-toolbar">
       <div class="index-filter-wrap">
         <input type="text" id="indexFilterInput" class="index-filter-input" placeholder="索引を絞り込み…" autocomplete="off">
-        <button type="button" class="index-filter-clear-btn" id="indexFilterClearBtn" title="クリア" style="display:none;">×</button>
+        <button type="button" class="index-filter-clear-btn" id="indexFilterClearBtn" title="クリア" aria-label="索引の絞り込みをクリア" style="display:none;">×</button>
       </div>
       <button class="index-close" id="indexClose" title="索引を閉じる" aria-label="索引を閉じる">×</button>
     </div>
@@ -741,7 +752,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <div class="map-search" id="mapSearch">
       <div class="map-search-row">
         <input type="text" id="mapSearchInput" placeholder="地名やスポット名で検索" autocomplete="off">
-        <button type="button" class="map-search-clear-btn" id="mapSearchClearBtn" title="クリア" style="display:none;">×</button>
+        <button type="button" class="map-search-clear-btn" id="mapSearchClearBtn" title="クリア" aria-label="検索欄をクリア" style="display:none;">×</button>
         <button type="button" id="mapSearchBtn">検索</button>
       </div>
       <div class="map-search-results" id="mapSearchResults"></div>
@@ -750,7 +761,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
          まとめている。仕切り線と、オン状態の金色文字で「一つの計器盤」に見えるように
          し、221Bへだけは特別枠（バーガンディ色の小さなピル）として右端に残す。 -->
     <div class="map-controls-cluster" id="mapControlsCluster">
-      <button class="mt-seg" id="historicToggleBtn" title="ホームズ時代の古地図（英国陸地測量部の1:10,560地形図、1888〜1913年にかけて測量）に切り替え">
+      <button class="mt-seg" id="historicToggleBtn" title="ホームズ時代の古地図（英国陸地測量部の1:10,560地形図、1888〜1913年にかけて測量）に切り替え" aria-pressed="false">
         <svg class="mt-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z"/><path d="M9 4v14M15 6v14"/></svg>
         <span id="historicToggleLabel">古地図</span>
       </button>
@@ -820,7 +831,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     </button>
     <div class="nearby-panel" id="nearbyPanel"></div>
     <div class="panel" id="panel">
-      <button class="panel-close" id="panelClose">×</button>
+      <button type="button" class="panel-close" id="panelClose" title="閉じる" aria-label="閉じる">×</button>
       <div id="panelContent"></div>
     </div>
     <div class="timeline" id="timeline"></div>
@@ -834,15 +845,15 @@ body.map-picking .leaflet-container{cursor:crosshair;}
        毎回消えてしまう。.modal-shellはその外側の、常に残るラッパーとして
        ✕ボタンと.modalを一緒に包み、✕ボタンだけ.modalの右上に絶対配置する
        （全モーダル共通。個々のモーダルのHTMLは一切変更不要）。 -->
-  <div class="modal-shell">
+  <div class="modal-shell" id="modalShell" role="dialog" aria-modal="true">
     <button type="button" class="modal-close-x" id="modalCloseX" aria-label="閉じる" title="閉じる">✕</button>
-    <div class="modal" id="modalBody"></div>
+    <div class="modal" id="modalBody" tabindex="-1"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 <div class="lightbox-overlay" id="lightboxOverlay">
   <img id="lightboxImg" src="" alt="">
-  <button class="lightbox-close" id="lightboxClose">×</button>
+  <button type="button" class="lightbox-close" id="lightboxClose" title="閉じる" aria-label="画像を閉じる">×</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -852,6 +863,35 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 <script src="https://cdn.jsdelivr.net/npm/mapbox-gl-leaflet@0.0.16/leaflet-mapbox-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// ---------- 必須の外部スクリプトが読み込めているかの確認 ----------
+// Leaflet・MarkerCluster・Supabase JSはCDN経由で読み込んでいるため、回線が
+// 不安定な環境（外を歩きながらスマホで見る、という本サイトの主な使い方では
+// 起こりうる）では読み込みに失敗することがある。失敗したまま以降の初期化処理
+// （window.supabase.createClient(...)やL.map(...)など）を実行すると、その場で
+// 例外が飛んで画面が真っ白なまま止まってしまい、何が起きたか利用者に伝わらない。
+// ここで先に必須のグローバルが揃っているか確認し、揃っていなければ分かりやすい
+// 案内画面に差し替えてから処理を打ち切る（throwで、この<script>タグ内の
+// 以降の処理だけを中断する。Mapbox GL/leaflet-mapbox-glは日本語ラベル表示用の
+// 任意機能なのでここでは必須扱いにしない）。
+(function(){
+  const essentialOk = (typeof L !== 'undefined')
+    && (typeof L.markerClusterGroup === 'function')
+    && (typeof window.supabase !== 'undefined')
+    && (typeof window.supabase.createClient === 'function');
+  if(!essentialOk){
+    document.body.innerHTML =
+      '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;'
+      + 'background:var(--charcoal,#2b2620);color:var(--parchment,#ece3cc);font-family:Georgia,serif;text-align:center;">'
+      + '<div style="max-width:420px;">'
+      + '<div style="font-size:2rem;margin-bottom:10px;">🧭</div>'
+      + '<h1 style="font-size:1.15rem;margin:0 0 10px;">読み込みに失敗しました</h1>'
+      + '<p style="font-size:.9rem;line-height:1.7;opacity:.85;margin:0 0 18px;">地図の表示に必要なファイルをうまく読み込めませんでした。電波の良い場所で、もう一度読み込み直してください。</p>'
+      + '<button type="button" onclick="location.reload()" style="background:var(--brass,#ab8347);color:#fff;border:none;padding:10px 22px;border-radius:4px;font-size:.9rem;cursor:pointer;">再読み込みする</button>'
+      + '</div></div>';
+    throw new Error('必須スクリプト(Leaflet/MarkerCluster/Supabase)の読み込みに失敗したため、初期化を中断しました。');
+  }
+})();
+
 // ---------- Supabase設定 ----------
 const SUPABASE_URL = 'https://brwuckusjxvwmixxyyow.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_fE_4Utj8xPDhjUBPbw4Dpg_QGLHu74B';
@@ -2112,6 +2152,20 @@ function showToast(msg){
   t.textContent = msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 2600);
 }
+// ---------- オフライン検知 ----------
+// 本サイトは「実際に外を歩きながらスマホで見る」使い方を想定しているため、
+// 電波が不安定でオフラインになる場面は珍しくない。オフライン中は地図タイルや
+// Supabaseへの読み書きが黙って失敗し続けるだけになりがちなので、通信が切れて
+// いる間は常時バナーで知らせる（トーストと違い自動では消さず、オンラインに
+// 戻ったタイミングで隠す）。
+function updateOfflineBanner(){
+  const banner = document.getElementById('offlineBanner');
+  if(!banner) return;
+  banner.classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
+updateOfflineBanner(); // 読み込み時点ですでにオフラインの場合にも対応
 // ---------- フォームの一時保存（下書き） ----------
 // ブラウザのlocalStorageにのみ保存され、サーバーには送られない。
 // アカウントごとに分けて保存する（同じ端末で複数アカウントを使っても混ざらないように）。
@@ -2571,6 +2625,7 @@ historicToggleBtn.addEventListener('click', ()=>{
   // 一緒に出し、オフの間は帯を圧迫しないよう短い表記に戻す。オン/オフの色分けは
   // 「正典登場地のみ」と共通のactiveクラスのパターンにする。
   historicToggleBtn.classList.toggle('active', showingHistoric);
+  historicToggleBtn.setAttribute('aria-pressed', String(showingHistoric));
   document.getElementById('historicToggleLabel').textContent = showingHistoric ? '古地図（1888〜1913年）' : '古地図';
   if(showingHistoric){
     // メインの地図がMapboxかOSMかを問わず、今表示中の方を退避する
@@ -4406,6 +4461,50 @@ if(modalCloseXBtn){
     closeModal();
   });
 }
+// ---------- モーダルのキーボード操作・フォーカス管理 ----------
+// openXXXModal系の関数はどれも「modalBody.innerHTMLを差し替えてから
+// overlay.classList.add('open')する」という共通パターンなので、個々の関数を
+// 直さなくても、overlayのclass変化をMutationObserverで監視するだけで
+// 全モーダル共通のフォーカス管理を後付けできる。
+const modalShellEl = document.getElementById('modalShell');
+let lastFocusedBeforeModal = null;
+function getModalFocusableEls(){
+  return Array.from(modalShellEl.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )).filter(el => !el.disabled && el.offsetParent !== null);
+}
+new MutationObserver(()=>{
+  const isOpen = overlay.classList.contains('open');
+  if(isOpen){
+    // すでにモーダル内にフォーカスがある(＝連続してモーダルを開き直した)場合は
+    // 直前のフォーカス先を上書きしない。
+    if(!modalShellEl.contains(document.activeElement)){
+      lastFocusedBeforeModal = document.activeElement;
+    }
+    modalBody.focus({preventScroll:true});
+  } else if(lastFocusedBeforeModal && document.body.contains(lastFocusedBeforeModal)){
+    lastFocusedBeforeModal.focus({preventScroll:true});
+    lastFocusedBeforeModal = null;
+  }
+}).observe(overlay, {attributes:true, attributeFilter:['class']});
+document.addEventListener('keydown', (ev)=>{
+  if(!overlay.classList.contains('open')) return;
+  if(ev.key === 'Escape'){
+    closeModal();
+    return;
+  }
+  if(ev.key === 'Tab'){
+    // モーダルの外にTabで抜けられないよう、モーダル内の先頭⇔末尾で折り返す
+    const focusable = getModalFocusableEls();
+    if(!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length-1];
+    if(ev.shiftKey && document.activeElement === first){
+      ev.preventDefault(); last.focus();
+    } else if(!ev.shiftKey && document.activeElement === last){
+      ev.preventDefault(); first.focus();
+    }
+  }
+});
 
 function relatedChecklist(excludeId, preselected=[]){
   const ids = Object.keys(DATA).filter(id=>id!==excludeId).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
@@ -5838,7 +5937,7 @@ function renderTimeline(){
       ${renderJournalCard(j)}
     </div>`;
   }).join('') : '<p class="empty-msg">まだ訪問記録がありません。</p>';
-  timelineEl.innerHTML = `<button class="timeline-close" id="timelineClose">×</button><h2>訪問記録タイムライン</h2><div class="timeline-note">${items.length}件を新しい順に表示しています。</div><div>${html}</div>`;
+  timelineEl.innerHTML = `<button type="button" class="timeline-close" id="timelineClose" title="閉じる" aria-label="タイムラインを閉じる">×</button><h2>訪問記録タイムライン</h2><div class="timeline-note">${items.length}件を新しい順に表示しています。</div><div>${html}</div>`;
   document.getElementById('timelineClose').addEventListener('click', ()=>timelineEl.classList.remove('open'));
   timelineEl.querySelectorAll('[data-tl-entity]').forEach(card=>{
     card.addEventListener('click', (ev)=>{
@@ -5940,7 +6039,7 @@ function renderTrackCard(track, p){
 }
 function renderMyBook(){
   if(!currentUser){
-    myBookEl.innerHTML = `<button class="timeline-close" id="myBookClose">×</button><h2>マイ巡礼手帳</h2><p class="empty-msg">ログインすると、自分の訪問記録と踏破状況がここにまとまります。</p>`;
+    myBookEl.innerHTML = `<button type="button" class="timeline-close" id="myBookClose" title="閉じる" aria-label="マイ巡礼手帳を閉じる">×</button><h2>マイ巡礼手帳</h2><p class="empty-msg">ログインすると、自分の訪問記録と踏破状況がここにまとまります。</p>`;
     document.getElementById('myBookClose').addEventListener('click', ()=>myBookEl.classList.remove('open'));
     return;
   }
@@ -5960,7 +6059,7 @@ function renderMyBook(){
       ${renderJournalCard(j)}
     </div>`;
   }).join('') : '<p class="empty-msg">まだ訪問記録がありません。「＋ 訪問記録を追加」から書いてみましょう。</p>';
-  myBookEl.innerHTML = `<button class="timeline-close" id="myBookClose">×</button><h2>マイ巡礼手帳</h2><div class="mybook-section-label">${escapeHtml(getDisplayName(currentUser))}さんの記録</div>${statsHtml}<div>${listHtml}</div>`;
+  myBookEl.innerHTML = `<button type="button" class="timeline-close" id="myBookClose" title="閉じる" aria-label="マイ巡礼手帳を閉じる">×</button><h2>マイ巡礼手帳</h2><div class="mybook-section-label">${escapeHtml(getDisplayName(currentUser))}さんの記録</div>${statsHtml}<div>${listHtml}</div>`;
   document.getElementById('myBookClose').addEventListener('click', ()=>myBookEl.classList.remove('open'));
   myBookEl.querySelectorAll('[data-tl-entity]').forEach(card=>{
     card.addEventListener('click', (ev)=>{
@@ -6263,7 +6362,7 @@ function handleFirstFix(userCoords){
     nearbyPanel.classList.remove('show');
     return;
   }
-  nearbyPanel.innerHTML = `<div class="nearby-panel-head">現在地から近い場所<button class="nearby-panel-close" id="nearbyPanelClose">×</button></div>
+  nearbyPanel.innerHTML = `<div class="nearby-panel-head">現在地から近い場所<button type="button" class="nearby-panel-close" id="nearbyPanelClose" title="閉じる" aria-label="近くの場所の一覧を閉じる">×</button></div>
     ${nearby.map(n=>`<button type="button" class="nearby-item" data-id="${n.id}"><span>${escapeHtml(DATA[n.id].name)}</span><span class="ni-dist">${formatDist(n.dist)}</span></button>`).join('')}`;
   nearbyPanel.classList.add('show');
   nearbyPanel.querySelectorAll('[data-id]').forEach(btn=>btn.addEventListener('click', ()=>{ nearbyPanel.classList.remove('show'); showEntity(btn.dataset.id); }));
