@@ -3518,7 +3518,7 @@ function openEditModal(targetId){
       <div class="hint">地図上のピンの大きさ・色や「正典登場地のみ」フィルターに反映されます。</div>
     </div>` : ''}
     <div class="field"><label>関連付ける項目</label><div class="checklist">${relatedChecklist(targetId, e.related||[])}</div></div>
-    <div class="modal-actions"><button class="modal-cancel" id="f-cancel">キャンセル</button><button class="modal-submit" id="f-submit">保存する</button></div>
+    <div class="modal-actions"><button class="modal-cancel" id="f-cancel">キャンセル</button><button class="modal-cancel" id="f-save-draft">一時保存</button><button class="modal-submit" id="f-submit">保存して送信</button></div>
     ${isReviewer() ? `<div class="danger-zone">
       <button class="danger-delete-btn" id="f-delete-open">この項目を削除する</button>
     </div>` : ''}`;
@@ -3538,6 +3538,19 @@ function openEditModal(targetId){
   }
   document.getElementById('f-cancel').addEventListener('click', closeModal);
   document.getElementById('f-delete-open')?.addEventListener('click', ()=>openDeleteConfirmModal(targetId, e.name));
+  // ★通常はwireDraftAutosave（入力のたびに自動で裏で保存）が動いているが、
+  // 「ちゃんと保存されているか不安」という声に応えて、明示的に今すぐ保存したことが
+  // 分かるボタンも用意した。挙動自体はwireDraftAutosaveの自動保存と同じ
+  // （このブラウザだけに残る下書きで、まだ審査には送っていない）。
+  document.getElementById('f-save-draft').addEventListener('click', ()=>{
+    const data = {};
+    editEntityDraftFields.forEach(fid=>{
+      const el = document.getElementById(fid);
+      if(el) data[fid] = el.value;
+    });
+    saveDraft('editEntity', targetId, data);
+    showToast('この内容を一時保存しました（この端末にのみ残ります。まだ送信はされていません）。');
+  });
   document.getElementById('f-submit').addEventListener('click', async ()=>{
     if(!currentUser){ showToast('編集にはログインが必要です。'); return; }
     const name = document.getElementById('f-name').value.trim();
