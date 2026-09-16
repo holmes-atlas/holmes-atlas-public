@@ -90,7 +90,8 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .alias-list-empty{padding:8px 16px;font-size:.78rem;opacity:.55;font-style:italic;}
 .site-license{padding:16px;font-size:.68rem;color:var(--fog);opacity:.6;line-height:1.7;border-top:1px solid var(--line);margin-top:10px;}
 .site-license a{color:var(--brass-light);}
-.fav-subheader{padding:8px 16px 4px;font-size:.7rem;color:var(--brass-light);font-weight:600;}
+.fav-subheader{font-size:.7rem;color:var(--brass-light);font-weight:600;}
+.fav-subheader-row{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:8px 16px 4px;}
 .alias-add-standalone-btn{display:block;width:calc(100% - 24px);margin:4px 12px 8px;font-size:.78rem;background:var(--teal);border:none;color:#fff;padding:6px 0;border-radius:3px;cursor:pointer;}
 .alias-delete-btn{background:none;border:1px solid var(--line);color:var(--fog);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.78rem;flex:none;line-height:1;padding:0;}
 .alias-delete-btn:hover{border-color:var(--burgundy);color:var(--burgundy);}
@@ -2824,7 +2825,10 @@ function renderIndex(){
         const items = list.entityIds.filter(id=>favMatchedIds.has(id)).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
         if(items.length===0) return;
         anyListShown = true;
-        html += `<div class="fav-subheader">${escapeHtml(list.name)}<span class="fav-list-count">（${items.length}）</span></div>`;
+        html += `<div class="fav-subheader-row">
+          <span class="fav-subheader"><span class="fav-index-name" data-fav-index-name="${list.id}">${escapeHtml(list.name)}</span><span class="fav-list-count">（${items.length}）</span></span>
+          <button type="button" class="fav-list-rename-btn" data-fav-rename-index="${list.id}" title="リスト名を変更" aria-label="リスト名を変更">✏️</button>
+        </div>`;
         items.forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
       });
       // リストに紐づかないのに favMatchedIds に入ることは通常起きないが、
@@ -2833,7 +2837,7 @@ function renderIndex(){
       const shown = new Set(favoriteLists.flatMap(l=>l.entityIds));
       const leftover = Array.from(favMatchedIds).filter(id=>!shown.has(id)).sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
       if(leftover.length){
-        html += `<div class="fav-subheader">その他</div>`;
+        html += `<div class="fav-subheader-row"><span class="fav-subheader">その他</span></div>`;
         leftover.forEach(id=>{ html += `<button class="index-item" data-id="${id}">${escapeHtml(DATA[id].name)}</button>`; });
         anyListShown = true;
       }
@@ -2909,6 +2913,48 @@ function renderIndex(){
       const g = btn.dataset.group;
       if(indexOpenGroups.has(g)) indexOpenGroups.delete(g); else indexOpenGroups.add(g);
       renderIndex();
+    });
+  });
+  // 索引の★お気に入り内、各フォルダ（お気に入りリスト）見出しの✏️から、その場でリスト名を変更できる。
+  // openFavoriteListsModal内の同種のリネームUIと同じ考え方（見出しのテキストをその場で
+  // input要素に差し替え、Enter/フォーカス外れで確定・保存、Escapeでキャンセル）。
+  scrollEl.querySelectorAll('.fav-list-rename-btn[data-fav-rename-index]').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      const listId = btn.dataset.favRenameIndex;
+      const list = favoriteLists.find(l=>l.id===listId);
+      if(!list) return;
+      const nameSpan = Array.from(scrollEl.querySelectorAll('.fav-index-name')).find(el=>el.dataset.favIndexName===listId);
+      if(!nameSpan || nameSpan.tagName === 'INPUT') return;
+      let done = false;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'fav-list-rename-input';
+      input.value = list.name;
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.select();
+      const finish = async (save)=>{
+        if(done) return;
+        done = true;
+        if(save){
+          const newName = input.value.trim();
+          if(newName && newName !== list.name){
+            list.name = newName;
+            await safeSet(favoritesKey(), favoriteLists);
+            // 地図の絞り込みで今まさに選ばれているリストの名前が変わった場合は、
+            // 絞り込みボタンのラベルもその場で追従させる
+            if(favListFilter === listId) setFavFilterLabel(newName, true);
+          }
+        }
+        renderIndex();
+      };
+      input.addEventListener('keydown', (ev2)=>{
+        if(ev2.key==='Enter'){ ev2.preventDefault(); finish(true); }
+        else if(ev2.key==='Escape'){ ev2.preventDefault(); finish(false); }
+      });
+      input.addEventListener('blur', ()=>finish(true));
     });
   });
 }
