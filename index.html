@@ -6033,11 +6033,7 @@ const myBookEl = document.getElementById('myBook');
 // 単純な件数の記録のみ）。新しいコレクションを増やしたいときは、この配列に1エントリ足す
 // だけでよい（match関数がDATA上の項目を判定する）。
 const COLLECTION_TRACKS = [
-  {key: 'place', icon: '🗺️', label: '地名', unitLabel: '地名', match: e => e.type === 'place'},
-  {key: 'canon', icon: '📖', label: '正典作品', unitLabel: '正典作品', match: e => e.type === 'work' && !!e.canon},
-  {key: 'person', icon: '🎭', label: '人物', unitLabel: '人物', match: e => e.type === 'person'},
-  {key: 'term', icon: '📚', label: '用語', unitLabel: '用語', match: e => e.type === 'term'},
-  {key: 'pastiche', icon: '🎨', label: '正典外作品', unitLabel: '正典外作品', match: e => e.type === 'work' && !e.canon}
+  {key: 'place', icon: '🗺️', label: '地名', unitLabel: '地名', match: e => e.type === 'place'}
 ];
 function computeTrackProgress(track, myPosts){
   const ids = new Set(myPosts.filter(j=>j.entityId && track.match(DATA[j.entityId]||{})).map(j=>j.entityId));
