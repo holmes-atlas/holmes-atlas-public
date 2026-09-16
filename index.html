@@ -180,6 +180,16 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
   border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);display:none;}
 .mt-select-menu.show{display:block;}
 .mt-select-menu-section{padding:6px 12px;font-size:.7rem;color:var(--slate);background:var(--parchment-2);}
+/* 正典作品一覧の折りたたみ見出し。中身が長いリスト（.mt-select-menu-collapse-body）
+   の開閉トグルを兼ねるため、通常の.mt-select-menu-sectionと違いボタン化して
+   いる。ボタンの既定スタイル（枠線・フォント等）をリセットして元の見出しの
+   見た目に揃える。 */
+.mt-select-menu-section.mt-select-menu-collapsible{display:flex;align-items:center;gap:6px;width:100%;
+  border:none;text-align:left;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.mt-select-menu-section.mt-select-menu-collapsible:hover{background:#efe6c8;}
+.mt-select-collapse-arrow{display:inline-block;width:8px;flex:none;font-size:.65rem;color:var(--brass);}
+.mt-select-menu-collapse-body{display:none;}
+.mt-select-menu-collapse-body.expanded{display:block;}
 .mt-select-menu-item{display:flex;align-items:center;gap:0;width:100%;text-align:left;background:#fff;border:none;
   border-bottom:1px solid var(--line);padding:9px 12px;font-size:.85rem;color:var(--charcoal);
   cursor:pointer;font-family:'Crimson Pro',serif;}
@@ -597,7 +607,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
       </button>
       <span class="mt-div"></span>
       <span class="mt-seg mt-select-wrap" id="viewFilterWrap">
-        <button type="button" class="mt-select-btn" id="viewFilterBtn" title="表示する地点を絞り込む（正典登場地のみ／特定の作品の登場地のみ）" aria-haspopup="listbox" aria-expanded="false">
+        <button type="button" class="mt-select-btn" id="viewFilterBtn" title="表示する地点を絞り込む（正典登場地のみ／特定の作品の登場地のみ／訪問記録ピンの表示・非表示）" aria-haspopup="listbox" aria-expanded="false">
           <span id="viewFilterBtnLabel">表示絞り込み</span>
           <svg class="mt-ic mt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
@@ -2351,6 +2361,10 @@ let workFilter = null;
 // ''＝「全ての地点」（絞り込みなし）、'__core__'＝「全ての正典登場地」、
 // それ以外＝選んだ作品のID。
 let viewFilterValue = '';
+// 正典作品一覧（60件近く）の折りたたみ開閉状態。メニューを開き直しても
+// 状態を保つため、populateViewFilterMenu()の外側（関数が呼ばれるたびに
+// リセットされない場所）で持つ。
+let viewFilterCanonExpanded = false;
 function setViewFilterLabel(text, active){
   const label = document.getElementById('viewFilterBtnLabel');
   if(label) label.textContent = text;
@@ -2383,6 +2397,16 @@ function openViewFilterMenu(){
   wrap.classList.add('open');
   btn.setAttribute('aria-expanded','true');
 }
+// 表示絞り込みボタンの「active」ハイライトは、地点側の絞り込み（workFilter／
+// coreOnlyFilter）と、訪問記録ピンの表示・非表示（journalMarkersVisible）の
+// 2つの軸をまとめて反映する。地点側はラベル文言も変わるためsetViewFilterLabel
+// 側でも簡易にactiveを付けているが、訪問記録側はラベル文言を変えない（ボタンの
+// 文字は地点の絞り込み状態専用の表示のままにしておきたいため）ので、最終的な
+// activeの真偽はここで両方の状態から毎回計算し直す。
+function syncViewFilterBtnActive(){
+  const btn = document.getElementById('viewFilterBtn');
+  if(btn) btn.classList.toggle('active', !!workFilter || coreOnlyFilter || !journalMarkersVisible);
+}
 function selectViewFilter(value, label){
   viewFilterValue = value;
   if(value === '__core__'){
@@ -2396,6 +2420,7 @@ function selectViewFilter(value, label){
     workFilter = null;
   }
   setViewFilterLabel(label, !!value);
+  syncViewFilterBtnActive();
   closeViewFilterMenu();
   renderMarkers();
   renderIndex();
@@ -2425,6 +2450,14 @@ function populateViewFilterMenu(){
     if(e.type==='work' && e.canon) canonWorks.push(id);
   });
   canonWorks.sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
+  // 正典作品は60件近くあり、全部並べるとメニュー自体が縦に長くなって
+  // スクロールが大変になる（ユーザー報告）。そのため折りたたみ方式にし、
+  // 既定では閉じておく。ただし今まさにその中の作品が選択されている場合は、
+  // 開き直すたびに閉じた状態に戻ってチェックが見えなくなると分かりづらいので、
+  // その時だけ自動的に開く。開閉状態自体（viewFilterCanonExpanded）は
+  // journalMarkersVisibleと同様、メニューを開き直しても保持する。
+  const canonSelected = !!(prevValue && DATA[prevValue] && DATA[prevValue].type==='work' && DATA[prevValue].canon);
+  if(canonSelected) viewFilterCanonExpanded = true;
   const itemHtml = (value, label) => {
     const active = value===prevValue;
     return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" role="option"><span class="mt-select-check">${active?'✓':''}</span>${escapeHtml(label)}</button>`;
@@ -2432,13 +2465,41 @@ function populateViewFilterMenu(){
   let html = itemHtml('', '全ての地点');
   html += itemHtml('__core__', '全ての正典登場地');
   if(canonWorks.length){
-    html += `<div class="mt-select-menu-section">正典（コナン・ドイル）の各作品</div>`;
+    html += `<button type="button" class="mt-select-menu-section mt-select-menu-collapsible" id="viewFilterCanonToggle" aria-expanded="${viewFilterCanonExpanded?'true':'false'}" aria-controls="viewFilterCanonList"><span class="mt-select-collapse-arrow">${viewFilterCanonExpanded?'▾':'▸'}</span>正典（コナン・ドイル）の各作品<span class="mt-select-menu-count">（${canonWorks.length}）</span></button>`;
+    html += `<div class="mt-select-menu-collapse-body${viewFilterCanonExpanded?' expanded':''}" id="viewFilterCanonList">`;
     html += canonWorks.map(id=>itemHtml(id, DATA[id].name)).join('');
+    html += `</div>`;
   }
+  // 訪問記録ピンの表示・非表示は、上のリストとは独立した軸（複数選択の排他制御に
+  // 乗せず、単純なON/OFF）なので、専用のセクションとして分けて追加する。data-value
+  // を持たせず、下で専用のクリックハンドラを付ける（他の項目と同じ汎用ハンドラに
+  // 拾われないようにするため）。
+  html += `<div class="mt-select-menu-section">訪問記録（地図上のピン）</div>`;
+  html += `<button type="button" class="mt-select-menu-item${journalMarkersVisible?' active':''}" id="viewFilterJournalToggle" role="option"><span class="mt-select-check">${journalMarkersVisible?'✓':''}</span>訪問記録を地図に表示する</button>`;
   menu.innerHTML = html;
-  menu.querySelectorAll('.mt-select-menu-item').forEach(item=>{
+  menu.querySelectorAll('.mt-select-menu-item[data-value]').forEach(item=>{
     item.addEventListener('click', ()=>selectViewFilter(item.dataset.value, item.textContent));
   });
+  const journalToggleItem = document.getElementById('viewFilterJournalToggle');
+  if(journalToggleItem){
+    journalToggleItem.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      setJournalMarkersVisible(!journalMarkersVisible);
+      closeViewFilterMenu();
+      syncViewFilterBtnActive();
+    });
+  }
+  const canonToggleBtn = document.getElementById('viewFilterCanonToggle');
+  if(canonToggleBtn){
+    // 開閉の切り替えだけなので絞り込み状態やactiveハイライトには影響しない。
+    // メニューは閉じず、その場で中身を差し替えて開いたままにする（続けて
+    // 作品を選びやすくするため）。
+    canonToggleBtn.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      viewFilterCanonExpanded = !viewFilterCanonExpanded;
+      populateViewFilterMenu();
+    });
+  }
   if(prevValue === '__core__'){
     setViewFilterLabel('全ての正典登場地', true);
   } else if(prevValue && DATA[prevValue] && DATA[prevValue].type==='work'){
@@ -2451,6 +2512,7 @@ function populateViewFilterMenu(){
     setViewFilterLabel('表示絞り込み', false);
   }
   // それ以外（''のまま＝「全ての地点」）は変更なし
+  syncViewFilterBtnActive();
 }
 const viewFilterBtn = document.getElementById('viewFilterBtn');
 viewFilterBtn.addEventListener('click', (ev)=>{
@@ -2943,6 +3005,20 @@ const journalMarkerClusterGroup = L.markerClusterGroup({
   }
 }).addTo(map);
 let journalMarkers = [];
+// 訪問記録ピンの表示・非表示（表示絞り込みメニュー内のチェックで切り替え）。
+// クラスタ化は「多すぎて重い・見づらい」への対処だが、こちらは「今は地点そのもの
+// に集中したいので訪問記録ピンごと視界から消したい」という別のニーズへの対処。
+// レイヤーグループ自体をmapに付け外しするだけなので、journal配列やrenderJournalMarkers()
+// 側のデータには一切手を入れない（再表示時にrenderJournalMarkers()を呼び直す必要もない）。
+let journalMarkersVisible = true;
+function setJournalMarkersVisible(visible){
+  journalMarkersVisible = visible;
+  if(visible){
+    if(!map.hasLayer(journalMarkerClusterGroup)) map.addLayer(journalMarkerClusterGroup);
+  } else {
+    if(map.hasLayer(journalMarkerClusterGroup)) map.removeLayer(journalMarkerClusterGroup);
+  }
+}
 function renderJournalMarkers(){
   journalMarkerClusterGroup.clearLayers();
   journalMarkers = [];
@@ -4193,6 +4269,10 @@ async function deleteEntity(targetId){
     overrides[targetId].deleted = true;
     await rpcObjMerge('p-overrides', targetId, {deleted:true});
   }
+  // ここだけは複数のリスト・複数のメモを一度にまたいで変更する一括クリーンアップ
+  // （項目が完全に削除された時、それを含んでいた全リスト・全メモから同時に外す）なので、
+  // 「1件だけ」を前提にしたRPCでは表現できない。レビュアーによる項目削除自体が
+  // 頻繁な操作ではないため、ここは従来通りsafeSet（丸ごと上書き）のままにしてある。
   favoriteLists.forEach(l=>{ l.entityIds = l.entityIds.filter(x=>x!==targetId); });
   await safeSet(favoritesKey(), favoriteLists);
   privateNotes = privateNotes.filter(n=>n.entityId!==targetId);
@@ -4253,7 +4333,11 @@ function openFavoriteListsModal(entityId){
       if(!list) return;
       if(cb.checked){ if(!list.entityIds.includes(entityId)) list.entityIds.push(entityId); }
       else { list.entityIds = list.entityIds.filter(x=>x!==entityId); }
-      await safeSet(favoritesKey(), favoriteLists);
+      // 「そのリストの、entityIdsという配列フィールドの中で、このentityIdの有無を
+      // 反転させる」というPostgres側の原子的な操作（atlas_arr_toggle_member）。
+      // これにより、他のリストや他のentityIdには一切触れずに1件だけ更新できる
+      // （以前は毎回favoriteLists全体を丸ごと上書き保存していた）。
+      await rpcArrToggleMember(favoritesKey(), list.id, 'entityIds', entityId);
       showEntity(entityId, {fromTrail:true});
       renderIndex();
       // 地図の絞り込みで今まさに選ばれているリストが更新された場合は、
@@ -4284,7 +4368,7 @@ function openFavoriteListsModal(entityId){
           const newName = input.value.trim();
           if(newName && newName !== list.name){
             list.name = newName;
-            await safeSet(favoritesKey(), favoriteLists);
+            await rpcArrPatch(favoritesKey(), listId, {name: newName});
             renderIndex();
             // 地図の絞り込みで今まさに選ばれているリストの名前が変わった場合は、
             // 絞り込みボタンのラベルもその場で追従させる
@@ -4304,8 +4388,14 @@ function openFavoriteListsModal(entityId){
     const rawName = document.getElementById('fav-new-list-name').value.trim();
     const name = rawName || defaultFavoriteListName();
     const newList = {id:'list-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name, entityIds:[entityId]};
+    const isFirstEverList = favoriteLists.length === 0; // このユーザーのp-favorites:行自体がまだ存在しない可能性がある
     favoriteLists.push(newList);
-    await safeSet(favoritesKey(), favoriteLists);
+    // 2件目以降のリスト作成は「配列に1件追加するだけ」の原子的操作（atlas_arr_append）で
+    // 済むが、そのユーザーにとって本当に最初の1件目だけは、p-favorites:<userId>という
+    // 行自体がまだatlas_dataに存在しない可能性があるため、行の新規作成も行うsafeSet
+    // （upsert）を使う。2件目以降は行の存在が保証されているので安心して使える。
+    if(isFirstEverList) await safeSet(favoritesKey(), favoriteLists);
+    else await rpcArrAppend(favoritesKey(), newList);
     showEntity(entityId, {fromTrail:true});
     renderIndex();
     openFavoriteListsModal(entityId);
@@ -4405,7 +4495,9 @@ function openFavoriteListEditModal(listId){
   document.getElementById('fle-close-btn').addEventListener('click', closeModal);
   wireFavoriteListDragReorder(document.getElementById('fle-item-list'), async (newOrder)=>{
     list.entityIds = newOrder;
-    await safeSet(favoritesKey(), favoriteLists);
+    // 並べ替えはentityIds全体の順番を丸ごと置き換える操作なので、そのリスト1件分の
+    // entityIdsフィールドだけをpatchする（他のリストには触れない）。
+    await rpcArrPatch(favoritesKey(), listId, {entityIds: newOrder});
     renderIndex();
     if(favListFilter === listId) renderMarkers();
   });
@@ -4415,7 +4507,7 @@ function openFavoriteListEditModal(listId){
     const newName = nameInput.value.trim();
     if(newName && newName !== list.name){
       list.name = newName;
-      await safeSet(favoritesKey(), favoriteLists);
+      await rpcArrPatch(favoritesKey(), listId, {name: newName});
       if(favListFilter === listId) setFavFilterLabel(newName, true);
       renderIndex();
     } else {
@@ -4433,7 +4525,7 @@ function openFavoriteListEditModal(listId){
       const id = cb.dataset.fleItem;
       if(cb.checked){ if(!list.entityIds.includes(id)) list.entityIds.push(id); }
       else { list.entityIds = list.entityIds.filter(x=>x!==id); }
-      await safeSet(favoritesKey(), favoriteLists);
+      await rpcArrToggleMember(favoritesKey(), listId, 'entityIds', id);
       const countEl = document.getElementById('fle-item-count');
       if(countEl) countEl.textContent = list.entityIds.length;
       renderIndex();
@@ -4461,7 +4553,10 @@ function openFavoriteListEditModal(listId){
       btn.addEventListener('click', async ()=>{
         const id = btn.dataset.fleAdd;
         if(!list.entityIds.includes(id)) list.entityIds.push(id);
-        await safeSet(favoritesKey(), favoriteLists);
+        // 検索結果は元々「まだこのリストに入っていない項目」だけに絞ってあるので、
+        // 単純追加（atlas_arr_nested_append）でよい（重複を心配してtoggleにすると、
+        // もし他の端末で既に追加済みだった場合に誤って外してしまう）。
+        await rpcArrNestedAppend(favoritesKey(), listId, 'entityIds', id);
         renderIndex();
         if(favListFilter === listId) renderMarkers();
         openFavoriteListEditModal(listId);
@@ -4752,8 +4847,12 @@ function openJournalModal(prefill){
       likedBy: [], replies: []
     };
     if(visibility === 'private'){
+      const isFirstEverNote = privateNotes.length === 0; // p-notes:<userId>の行自体がまだ無い可能性がある
       privateNotes.push(record);
-      await safeSet(privateNotesKey(), privateNotes);
+      // 2件目以降は「配列に1件追加するだけ」の原子的操作で済むが、本当に最初の1件目だけは
+      // 行自体がまだ存在しない可能性があるため、行の新規作成も行うsafeSet（upsert）を使う。
+      if(isFirstEverNote) await safeSet(privateNotesKey(), privateNotes);
+      else await rpcArrAppend(privateNotesKey(), record);
     } else {
       journal.push(record);
       await rpcArrAppendLimited('p-journal', record);
@@ -4800,7 +4899,7 @@ async function deleteJournal(id){
   if(!currentUser || currentUser.id !== inPrivate.authorId){ showToast('この投稿を削除する権限がありません。'); return; }
   if(!confirm('この記録を削除します。よろしいですか？')) return;
   privateNotes = privateNotes.filter(x=>x.id!==id);
-  await safeSet(privateNotesKey(), privateNotes);
+  await rpcArrRemove(privateNotesKey(), id);
   showToast('削除しました。');
   refreshJournalViews();
 }
