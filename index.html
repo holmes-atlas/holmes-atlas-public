@@ -174,11 +174,15 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
   border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);display:none;}
 .mt-select-menu.show{display:block;}
 .mt-select-menu-section{padding:6px 12px;font-size:.7rem;color:var(--slate);background:var(--parchment-2);}
-.mt-select-menu-item{display:block;width:100%;text-align:left;background:#fff;border:none;
+.mt-select-menu-item{display:flex;align-items:center;gap:0;width:100%;text-align:left;background:#fff;border:none;
   border-bottom:1px solid var(--line);padding:9px 12px;font-size:.85rem;color:var(--charcoal);
   cursor:pointer;font-family:'Crimson Pro',serif;}
 .mt-select-menu-item:hover{background:#f7ecd0;}
-.mt-select-menu-item.active{background:#f0e6c8;font-weight:600;}
+/* 選択中かどうかは背景色の違いではなく✓マーク（.mt-select-check）だけで示す。
+   背景色だけで区別すると、初期状態（例：「全ての地点」）が誤って「選択中の色」に
+   見えてしまい紛らわしかったため。太字だけは選択中の強調として残す。 */
+.mt-select-menu-item.active{font-weight:600;}
+.mt-select-check{display:inline-block;width:16px;flex:none;color:var(--brass);font-weight:700;}
 .mt-select-menu-count{opacity:.6;font-size:.78rem;margin-left:3px;}
 @media (max-width:480px){
   .mt-seg{padding:0 9px;gap:5px;}
@@ -2357,7 +2361,10 @@ function populateViewFilterMenu(){
     if(e.type==='work' && e.canon) canonWorks.push(id);
   });
   canonWorks.sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja'));
-  const itemHtml = (value, label) => `<button type="button" class="mt-select-menu-item${value===prevValue?' active':''}" data-value="${escapeAttr(value)}" role="option">${escapeHtml(label)}</button>`;
+  const itemHtml = (value, label) => {
+    const active = value===prevValue;
+    return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" role="option"><span class="mt-select-check">${active?'✓':''}</span>${escapeHtml(label)}</button>`;
+  };
   let html = itemHtml('', '全ての地点');
   html += itemHtml('__core__', '全ての正典登場地');
   if(canonWorks.length){
@@ -2455,7 +2462,10 @@ function populateFavFilterMenu(){
     favListFilter = null;
     setFavFilterLabel('お気に入り表示', false);
   }
-  const itemHtml = (value, label, count) => `<button type="button" class="mt-select-menu-item${value===(favListFilter||'')?' active':''}" data-value="${escapeAttr(value)}" role="option">${escapeHtml(label)}${count!=null?` <span class="mt-select-menu-count">（${count}）</span>`:''}</button>`;
+  const itemHtml = (value, label, count) => {
+    const active = value===(favListFilter||'');
+    return `<button type="button" class="mt-select-menu-item${active?' active':''}" data-value="${escapeAttr(value)}" role="option"><span class="mt-select-check">${active?'✓':''}</span>${escapeHtml(label)}${count!=null?` <span class="mt-select-menu-count">（${count}）</span>`:''}</button>`;
+  };
   let html = itemHtml('', '全て表示');
   if(!currentUser){
     html += `<div class="mt-select-menu-section">ログインするとお気に入りリストで絞り込めます</div>`;
@@ -4454,8 +4464,22 @@ function renderSearchResults(localIds, externalResults, query){
   mapSearchResults.querySelectorAll('[data-local]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const id = btn.dataset.local;
-      saveRecentSearch(DATA[id].name);
-      showEntity(id); // 検索結果を選んだら、地名かどうかによらずそのまま説明ページを開く（以前の挙動に戻した）
+      const e = DATA[id];
+      saveRecentSearch(e.name);
+      if(e.type==='place' && e.coords){
+        // 地名なら、地図上のピンをタップしたときや221Bボタンと同じ、
+        // 地図を移動しつつ小さいプレビューカードを開く形にする
+        // （フルの説明ページはカードをタップした時だけ開く）
+        panel.classList.remove('open');
+        timelineEl.classList.remove('open');
+        myBookEl.classList.remove('open');
+        map.flyTo(e.coords, zoomForEntity(id), {duration:0.7});
+        openPlacePreviewPopup(id);
+      } else {
+        // 人物・作品・用語など地図上に対応する場所がない項目は、
+        // 従来通り説明ページを直接開く
+        showEntity(id);
+      }
       mapSearchResults.classList.remove('show'); mapSearchInput.value='';
     });
   });
