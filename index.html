@@ -9,7 +9,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="ホームズ・アトラス">
 <meta property="og:description" content="シャーロック・ホームズ作品に登場する地名・人物・作品情報を、地図と索引でたどれるファンサイトです。">
-<meta property="og:url" content="https://koumori1422.github.io/holmes-atlas-public/">
+<meta property="og:url" content="https://holmes-atlas.github.io/holmes-atlas-public/">
 <meta property="og:image" content="https://commons.wikimedia.org/wiki/Special:FilePath/Sherlock_Holmes_and_Professor_Moriarty_at_the_Reichenbach_Falls_-_Sidney_Paget.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="ホームズ・アトラス">
@@ -1202,7 +1202,7 @@ function openAuthModal(mode){
   document.getElementById('auth-google').addEventListener('click', async ()=>{
     const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'https://koumori1422.github.io/holmes-atlas-public/' }
+      options: { redirectTo: 'https://holmes-atlas.github.io/holmes-atlas-public/' }
     });
     if(error) showToast('Googleログインに失敗しました：' + error.message);
   });
@@ -1321,7 +1321,7 @@ const MAPTILER_HISTORIC_TILE_ID = 'uk-osgb10k1888';
 
 // ---------- メイン地図の日本語ラベル化設定（★任意。Mapboxに登録後、ここにアクセストークンを入れてください） ----------
 // https://account.mapbox.com/access-tokens/ でトークンを発行し（pk.で始まる公開トークン）、
-// 同じ画面の「URL restrictions」で自分のサイトのドメイン（例: koumori1422.github.io）に
+// 同じ画面の「URL restrictions」で自分のサイトのドメイン（例: holmes-atlas.github.io）に
 // 制限をかけてから、ここに貼り付けてください（未設定のままなら、従来通りOSM地図のみで動作します）。
 // Mapboxは無料枠(50,000回/月)を超えると従量課金（超過分 $5/1,000回〜）が発生する点に注意してください。
 const MAPBOX_TOKEN = 'pk.eyJ1Ijoia291bW9yaTE0MjIiLCJhIjoiY210cHZhdHk2MHUyYjJ4cjFoNHliczljaSJ9.DhCct4A0xUqFED4eN4X48Q';
