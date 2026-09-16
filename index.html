@@ -423,6 +423,16 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .latlng-row input{width:100%;}
 .checklist{max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:3px;padding:8px 10px;background:#fff;}
 .checklist label{display:block;font-size:.85rem;font-weight:400;margin:3px 0;cursor:pointer;}
+/* お気に入りリスト編集モーダルの、ドラッグ並べ替え可能な行。
+   ⠿ハンドルだけをドラッグ起点にし、行内のlabel（チェックボックス）は
+   従来通りタップでチェックのon/offができるよう独立させてある。 */
+.fle-row{display:flex;align-items:center;gap:2px;margin:3px 0;}
+.fle-drag-handle{cursor:grab;touch-action:none;color:var(--fog);font-size:1.1rem;line-height:1;
+  padding:4px 8px 4px 2px;flex:none;user-select:none;}
+.fle-drag-handle:active{cursor:grabbing;}
+.checklist .fle-row-label{display:flex;align-items:center;gap:0;font-size:.85rem;font-weight:400;
+  margin:0;cursor:pointer;flex:1;min-width:0;}
+.fle-row-dragging{background:#f7ecd0;border-radius:3px;box-shadow:0 2px 8px rgba(0,0,0,.2);position:relative;z-index:5;}
 .file-input{width:100%;font-size:.85rem;padding:6px 0;}
 .image-preview{margin-top:8px;}
 .image-preview img{max-width:100%;max-height:160px;border-radius:3px;border:1px solid var(--line);display:block;}
@@ -4141,6 +4151,46 @@ function openFavoriteListsModal(entityId){
   });
 }
 
+// ⠿ハンドルを掴んでのドラッグ並べ替え（マウス・タッチどちらもPointer Eventsで
+// 統一的に扱う）。移動中はpointermoveのたびに、指/カーソルの位置と他の行の
+// 中間点を比較して、ドラッグ中の行をDOM上で挿入し直す（差分更新ではなく毎回
+// 作り直す方式にすることで、複雑な入れ替えロジックによるバグを避けている）。
+// 離した時点のDOM順がそのまま新しい並び順になる。
+function wireFavoriteListDragReorder(listEl, onReorder){
+  if(!listEl) return;
+  listEl.querySelectorAll('.fle-drag-handle').forEach(handle=>{
+    handle.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      const row = handle.closest('.fle-row');
+      if(!row) return;
+      handle.setPointerCapture(ev.pointerId);
+      row.classList.add('fle-row-dragging');
+      const onMove = (ev2)=>{
+        const others = Array.from(listEl.querySelectorAll('.fle-row')).filter(r=>r!==row);
+        const y = ev2.clientY;
+        let target = null;
+        for(const r of others){
+          const rect = r.getBoundingClientRect();
+          if(y < rect.top + rect.height/2){ target = r; break; }
+        }
+        if(target) listEl.insertBefore(row, target);
+        else listEl.appendChild(row);
+      };
+      const onUp = (ev2)=>{
+        handle.releasePointerCapture(ev2.pointerId);
+        row.classList.remove('fle-row-dragging');
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        const newOrder = Array.from(listEl.querySelectorAll('.fle-row')).map(r=>r.dataset.fleRow);
+        onReorder(newOrder);
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    });
+  });
+}
 // お気に入りリストそのものを編集するモーダル（索引の★お気に入り内、各フォルダの
 // ✏️から開く）。openFavoriteListsModalが「1つの項目を、どのリストに入れるか」を
 // 扱うのに対し、こちらは「1つのリストの、名前と中身（入っている項目）」をまとめて
@@ -4154,15 +4204,20 @@ function openFavoriteListEditModal(listId){
   // （1）チェックを外してもその場で項目自体は消えず、間違えたらすぐ再チェックして
   // 元に戻せる、（2）見た目も「削除」ではなく「チェックのon/off」なので、誤操作の
   // 心理的なハードルが下がる、という2点を狙っている。
+  // 並び順はGoogleマップのルート表示（🧭ボタン）で出発地→目的地の順番として
+  // そのまま使われるため、ここでは名前順に並べ替えず、リストに入っている順番
+  // （＝ドラッグで並べ替えた順番）をそのまま表示する。
   const itemsHtml = () => {
     const items = list.entityIds.map(id=>({id, e:DATA[id]})).filter(x=>x.e);
-    items.sort((a,b)=>a.e.name.localeCompare(b.e.name,'ja'));
     if(items.length===0) return '<div class="alias-list-empty">まだ何も入っていません。上の検索から追加できます。</div>';
-    return items.map(({id,e})=>`<label><input type="checkbox" data-fle-item="${id}" checked> <span class="dot dot-${entityClass(e)}"></span>${escapeHtml(e.name)}<span class="fav-list-count">（${entityLabel(e)}）</span></label>`).join('');
+    return items.map(({id,e})=>`<div class="fle-row" data-fle-row="${id}">
+      <span class="fle-drag-handle" title="ドラッグして並べ替え" aria-label="ドラッグして並べ替え">⠿</span>
+      <label class="fle-row-label"><input type="checkbox" data-fle-item="${id}" checked> <span class="dot dot-${entityClass(e)}"></span>${escapeHtml(e.name)}<span class="fav-list-count">（${entityLabel(e)}）</span></label>
+    </div>`).join('');
   };
   modalBody.innerHTML = `
     <h3>リストを編集</h3>
-    <div class="modal-sub">名前の変更や、入っている項目の追加・削除ができます。チェックを外すとリストから外れます（間違えたらそのまま再チェックすれば元に戻せます）。</div>
+    <div class="modal-sub">名前の変更や、入っている項目の追加・削除ができます。チェックを外すとリストから外れます（間違えたらそのまま再チェックすれば元に戻せます）。⠿を掴んでドラッグすると順番を変えられます。この順番がGoogleマップのルート表示（出発地→目的地）にそのまま使われます。</div>
     <div class="field">
       <label>リスト名</label>
       <input type="text" id="fle-name-input" value="${escapeAttr(list.name)}">
@@ -4179,6 +4234,12 @@ function openFavoriteListEditModal(listId){
     <div class="modal-actions"><button class="modal-cancel" id="fle-close-btn">確定</button></div>`;
   overlay.classList.add('open');
   document.getElementById('fle-close-btn').addEventListener('click', closeModal);
+  wireFavoriteListDragReorder(document.getElementById('fle-item-list'), async (newOrder)=>{
+    list.entityIds = newOrder;
+    await safeSet(favoritesKey(), favoriteLists);
+    renderIndex();
+    if(favListFilter === listId) renderMarkers();
+  });
 
   const nameInput = document.getElementById('fle-name-input');
   const commitName = async ()=>{
