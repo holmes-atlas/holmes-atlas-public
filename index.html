@@ -513,12 +513,18 @@ body.map-picking .leaflet-container{cursor:crosshair;}
   border-bottom:1px solid var(--line);background:#fff;}
 .route-pick-row:last-child{border-bottom:none;}
 .route-pick-name{font-size:.85rem;color:var(--charcoal);flex:1;min-width:0;}
-.route-pick-btns{display:flex;gap:6px;flex:none;}
+.route-pick-btns{display:flex;gap:6px;flex:none;flex-wrap:wrap;}
 .route-pick-btn{background:none;border:1px solid var(--line);color:var(--slate);padding:5px 9px;
   border-radius:3px;cursor:pointer;font-size:.78rem;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
 .route-pick-btn:hover{background:#f7ecd0;}
 .route-pick-origin.active{background:var(--brass);border-color:var(--brass);color:#fff;font-weight:600;}
 .route-pick-dest.active{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600;}
+/* 経由地チェックボックスは◎○ボタンの下に独立した行として置きたいので、
+   flex-wrapで折り返させた上でflex-basis:100%を指定する。.route-pick-btnの
+   詳細度（下のメディアクエリ内でflex:1を指定している）に負けないよう、
+   2クラス指定で詳細度を上げている。 */
+.route-pick-btn.route-pick-waypoint{flex:1 1 100%;text-align:left;margin-top:2px;white-space:normal;}
+.route-pick-waypoint.active{background:var(--parchment-2);border-color:var(--brass);color:var(--charcoal);}
 @media (max-width:480px){
   .route-pick-row{flex-direction:column;align-items:flex-start;gap:6px;}
   .route-pick-btns{width:100%;}
@@ -2785,14 +2791,26 @@ function openRouteOriginConfirmModal(stops){
 function openRoutePickStopsModal(stops){
   let originId = null;
   let destId = null;
-  const rowHtml = (e) => `
+  // 出発地・目的地のどちらでもない地点は、既定では全て経由地に含める
+  // （変更前の挙動を踏襲）。ただし、ここから個別にチェックを外して経由地から
+  // 除外できるようにする（「リストには入っているが、今回のルートでは回らない
+  // 地点がある」というケース向け）。出発地・目的地に選ばれている間は経由地
+  // チェックボックス自体を出さない（出発地・目的地は経由地の概念とは別に、
+  // 必ずルートに含まれるため）。
+  let waypointIncluded = new Set(stops.map(e=>e.id));
+  const rowHtml = (e) => {
+    const isEndpoint = e.id===originId || e.id===destId;
+    const checked = waypointIncluded.has(e.id);
+    return `
     <div class="route-pick-row">
       <span class="route-pick-name">${escapeHtml(e.name)}</span>
       <div class="route-pick-btns">
         <button type="button" class="route-pick-btn route-pick-origin${e.id===originId?' active':''}" data-role="origin" data-id="${escapeAttr(e.id)}">◎ 出発地</button>
         <button type="button" class="route-pick-btn route-pick-dest${e.id===destId?' active':''}" data-role="dest" data-id="${escapeAttr(e.id)}">○ 目的地</button>
+        ${isEndpoint ? '' : `<button type="button" class="route-pick-btn route-pick-waypoint${checked?' active':''}" data-role="waypoint" data-id="${escapeAttr(e.id)}">${checked?'☑':'☐'} 経由地に含める</button>`}
       </div>
     </div>`;
+  };
   const renderList = () => {
     const listEl = document.getElementById('route-pick-list');
     if(!listEl) return;
@@ -2804,9 +2822,12 @@ function openRoutePickStopsModal(stops){
         if(role==='origin'){
           originId = (originId===id) ? null : id;
           if(destId===id) destId = null;
-        } else {
+        } else if(role==='dest'){
           destId = (destId===id) ? null : id;
           if(originId===id) originId = null;
+        } else {
+          if(waypointIncluded.has(id)) waypointIncluded.delete(id);
+          else waypointIncluded.add(id);
         }
         renderList();
       });
@@ -2816,7 +2837,7 @@ function openRoutePickStopsModal(stops){
     if(summaryEl){
       const originName = originId ? DATA[originId].name : '（未選択）';
       const destName = destId ? DATA[destId].name : '（未選択）';
-      const waypointCount = stops.length - (originId?1:0) - (destId?1:0);
+      const waypointCount = stops.filter(e=>e.id!==originId && e.id!==destId && waypointIncluded.has(e.id)).length;
       summaryEl.innerHTML = `出発地：<strong>${escapeHtml(originName)}</strong>　→　経由地：${waypointCount}件（Googleマップが最短順に自動調整）　→　目的地：<strong>${escapeHtml(destName)}</strong>`;
     }
     if(goBtn) goBtn.disabled = !(originId && destId);
@@ -2826,6 +2847,7 @@ function openRoutePickStopsModal(stops){
     <div class="modal-question">地点の一覧から、出発地と目的地をそれぞれ1つずつ選んでください</div>
     <div class="field">
       <div class="hint" id="route-pick-summary"></div>
+      <div class="hint" style="margin-top:6px;">出発地・目的地以外の地点は、チェックを外すと今回のルートから除外できます（既定では全て経由地に含まれます）。</div>
     </div>
     <div class="route-pick-list" id="route-pick-list"></div>
     <div class="modal-actions">
@@ -2840,7 +2862,7 @@ function openRoutePickStopsModal(stops){
   document.getElementById('route-pick-go').addEventListener('click', ()=>{
     if(!originId || !destId) return;
     closeModal();
-    openGoogleMapsRouteCustom(stops, originId, destId);
+    openGoogleMapsRouteCustom(stops, originId, destId, waypointIncluded);
   });
 }
 // useCurrentLocationがfalseなら先頭を出発地・末尾を目的地として並び順通りに、
@@ -2861,15 +2883,18 @@ function openGoogleMapsRoute(stops, useCurrentLocation){
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 // 出発地・目的地を自分で指定するモーダル（openRoutePickStopsModal）専用。
-// 選ばれなかった残りの地点はすべて経由地とし、巡回順はoptimize:trueで
-// Googleマップに任せる（ユーザーが選んだのは「どこから」「どこへ」だけで、
+// waypointIncludedIds（Setまたは配列。経由地チェックボックスがONの地点id）に
+// 入っている地点だけを経由地として使う。出発地・目的地以外で除外された地点は
+// 今回のルートに一切含めない。経由地の巡回順はoptimize:trueでGoogleマップに
+// 任せる（ユーザーが選んだのは「どこから」「どこへ」「何を回るか」だけで、
 // 途中の順番までは指定していないため）。
-function openGoogleMapsRouteCustom(stops, originId, destId){
+function openGoogleMapsRouteCustom(stops, originId, destId, waypointIncludedIds){
   const origin = stops.find(e=>e.id===originId);
   const dest = stops.find(e=>e.id===destId);
   if(!origin || !dest) return;
+  const includedSet = waypointIncludedIds instanceof Set ? waypointIncludedIds : new Set(waypointIncludedIds||[]);
   let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${origin.coords.join(',')}&destination=${dest.coords.join(',')}`;
-  const waypoints = stops.filter(e=>e.id!==originId && e.id!==destId).map(e=>e.coords.join(',')).join('|');
+  const waypoints = stops.filter(e=>e.id!==originId && e.id!==destId && includedSet.has(e.id)).map(e=>e.coords.join(',')).join('|');
   if(waypoints) url += `&waypoints=${encodeURIComponent('optimize:true|'+waypoints)}`;
   showToast('Googleマップを開いています…');
   window.open(url, '_blank', 'noopener,noreferrer');
