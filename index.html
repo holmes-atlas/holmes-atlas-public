@@ -641,12 +641,6 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .timeline-note{font-size:.85rem;opacity:.7;margin-bottom:18px;}
 
 .mybook-stats{background:var(--parchment-2);border:1px solid var(--line);border-radius:5px;padding:16px 18px;margin-bottom:20px;}
-.mybook-badge-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
-.mybook-badge-icon{font-size:1.9rem;line-height:1;}
-.mybook-badge-label{font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--ink);}
-.mybook-badge-next{font-size:.76rem;opacity:.65;margin-top:2px;}
-.mybook-progress-bar{background:#fff;border:1px solid var(--line);border-radius:20px;height:10px;overflow:hidden;margin:6px 0 12px;}
-.mybook-progress-fill{background:var(--teal);height:100%;border-radius:20px;transition:width .4s;}
 .mybook-numbers{display:flex;gap:22px;flex-wrap:wrap;font-size:.78rem;color:var(--slate);}
 .mybook-numbers strong{display:block;font-size:1.35rem;color:var(--ink);font-family:'Playfair Display',serif;font-weight:600;}
 .mybook-section-label{font-weight:600;color:var(--slate);margin:0 0 10px;font-size:.85rem;}
@@ -6035,85 +6029,26 @@ function renderTimeline(){
 
 // ---------- マイ巡礼手帳 ----------
 const myBookEl = document.getElementById('myBook');
-// 「コレクション」は種類ごとの制覇状況を表す。新しいコレクションを増やしたいときは、
-// この配列に1エントリ足すだけでよい（match関数がDATA上の項目を判定する）。
+// 「コレクション」は種類ごとの訪問件数を表す（ランク付けや踏破率のような評価指標は持たず、
+// 単純な件数の記録のみ）。新しいコレクションを増やしたいときは、この配列に1エントリ足す
+// だけでよい（match関数がDATA上の項目を判定する）。
 const COLLECTION_TRACKS = [
-  {
-    key: 'place', icon: '🗺️', label: '地名踏破', unitLabel: '地名',
-    match: e => e.type === 'place',
-    completeLabel: '全地点踏破',
-    tiers: [
-      {min:50, icon:'🕵️', label:'名探偵の相棒'},
-      {min:30, icon:'🏠', label:'ベイカー街の常連'},
-      {min:15, icon:'📖', label:'熱心な会員'},
-      {min:5,  icon:'🔍', label:'駆け出し捜査官'},
-      {min:1,  icon:'👣', label:'第一歩'},
-      {min:0,  icon:'🎩', label:'見習い'}
-    ]
-  },
-  {
-    key: 'canon', icon: '📖', label: '正典マスター', unitLabel: '正典作品',
-    match: e => e.type === 'work' && !!e.canon,
-    completeLabel: '正典60編制覇',
-    tiers: [
-      {min:30, icon:'🎓', label:'正典博士'},
-      {min:15, icon:'🕵️', label:'正典探求者'},
-      {min:5,  icon:'📚', label:'愛読者'},
-      {min:1,  icon:'📖', label:'開巻一歩'},
-      {min:0,  icon:'📕', label:'未読の見習い'}
-    ]
-  },
-  {
-    key: 'person', icon: '🎭', label: '人物図鑑', unitLabel: '人物',
-    match: e => e.type === 'person',
-    completeLabel: '人物図鑑コンプリート',
-    tiers: [
-      {min:6, icon:'🕵️', label:'名探偵気取り'},
-      {min:3, icon:'🤝', label:'顔なじみ'},
-      {min:1, icon:'👋', label:'初対面'},
-      {min:0, icon:'🎩', label:'未紹介'}
-    ]
-  },
-  {
-    key: 'term', icon: '📚', label: '用語事典', unitLabel: '用語',
-    match: e => e.type === 'term',
-    completeLabel: '用語事典コンプリート',
-    tiers: [
-      {min:2, icon:'🔍', label:'物知り'},
-      {min:1, icon:'📖', label:'興味津々'},
-      {min:0, icon:'❓', label:'初心者'}
-    ]
-  },
-  {
-    key: 'pastiche', icon: '🎨', label: 'パスティーシュ愛好家', unitLabel: '正典外作品',
-    match: e => e.type === 'work' && !e.canon,
-    completeLabel: 'パスティーシュ愛好家',
-    tiers: [
-      {min:2, icon:'🎨', label:'愛好家'},
-      {min:1, icon:'🎭', label:'興味あり'},
-      {min:0, icon:'📕', label:'未経験'}
-    ]
-  }
-]; // 各tiersはmin件数の降順。全件制覇は別枠（completeLabel）で判定する。
+  {key: 'place', icon: '🗺️', label: '地名', unitLabel: '地名', match: e => e.type === 'place'},
+  {key: 'canon', icon: '📖', label: '正典作品', unitLabel: '正典作品', match: e => e.type === 'work' && !!e.canon},
+  {key: 'person', icon: '🎭', label: '人物', unitLabel: '人物', match: e => e.type === 'person'},
+  {key: 'term', icon: '📚', label: '用語', unitLabel: '用語', match: e => e.type === 'term'},
+  {key: 'pastiche', icon: '🎨', label: '正典外作品', unitLabel: '正典外作品', match: e => e.type === 'work' && !e.canon}
+];
 function computeTrackProgress(track, myPosts){
   const ids = new Set(myPosts.filter(j=>j.entityId && track.match(DATA[j.entityId]||{})).map(j=>j.entityId));
   const count = ids.size;
   const total = Object.values(DATA).filter(track.match).length;
-  const isComplete = total>0 && count>=total;
-  const badge = isComplete ? {icon:'🏆', label: track.completeLabel} : (track.tiers.find(t=>count>=t.min) || track.tiers[track.tiers.length-1]);
-  const nextTier = isComplete ? null : track.tiers.slice().reverse().find(t=>t.min>count);
-  return {count, total, isComplete, badge, nextTier};
+  return {count, total};
 }
 function renderTrackCard(track, p){
-  const pct = p.total>0 ? Math.min(100, Math.round(p.count/p.total*100)) : 0;
-  const nextHtml = p.isComplete
-    ? `<div class="mybook-badge-next">全${p.total}${track.unitLabel}を制覇しました！</div>`
-    : (p.nextTier ? `<div class="mybook-badge-next">あと${p.nextTier.min-p.count}件で「${p.nextTier.label}」</div>` : '');
   return `
     <div class="mybook-stats">
       <div class="mybook-track-head">${track.icon} ${track.label}</div>
-      <div class="mybook-badge-row"><span class="mybook-badge-icon">${p.badge.icon}</span><div><div class="mybook-badge-label">${p.badge.label}</div>${nextHtml}</div></div>
-      <div class="mybook-progress-bar"><div class="mybook-progress-fill" style="width:${pct}%"></div></div>
       <div class="mybook-numbers"><div><strong>${p.count}</strong>／${p.total} ${track.unitLabel}</div></div>
     </div>`;
 }
@@ -6124,11 +6059,9 @@ function renderMyBook(){
     return;
   }
   const myPosts = journal.filter(j=>j.authorId===currentUser.id).concat(privateNotes).sort((a,b)=>b.createdAt-a.createdAt);
-  const likeTotal = myPosts.reduce((s,j)=>s+((j.likedBy||[]).length), 0);
   const summaryHtml = `
     <div class="mybook-numbers" style="margin-bottom:16px;">
       <div><strong>${myPosts.length}</strong> 投稿数</div>
-      <div><strong>${likeTotal}</strong> いいねを獲得</div>
     </div>`;
   const tracksHtml = COLLECTION_TRACKS.map(t=>renderTrackCard(t, computeTrackProgress(t, myPosts))).join('');
   const statsHtml = summaryHtml + tracksHtml;
