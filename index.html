@@ -291,6 +291,10 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .place-label-special::before{border-top-color:var(--burgundy)!important;}
 .leaflet-journal-icon{background:var(--teal);border:2px solid var(--parchment);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5);}
 .leaflet-journal-icon svg{width:13px;height:13px;}
+/* 訪問記録のクラスタは地点クラスタ（濃紺）と見分けられるよう、訪問記録ピン
+   自体と同じteal系の色にする。has-selectedのパルス演出は地点側のみで使う
+   ものなのでここでは使わない（journalMarkerClusterGroup専用のクラス）。 */
+.holmes-journal-cluster-icon .cluster-icon-inner{background:var(--teal);width:30px;height:30px;font-size:.82rem;}
 .place-label{background:rgba(28,36,48,.88)!important;color:var(--parchment)!important;border:1px solid var(--brass)!important;font-family:'Crimson Pro',serif;font-size:.72rem!important;padding:2px 7px!important;border-radius:2px;box-shadow:none!important;pointer-events:none!important;}
 .place-label::before{border-top-color:rgba(28,36,48,.88)!important;}
 .place-label-peripheral{border-color:var(--slate)!important;}
@@ -1738,6 +1742,21 @@ let DATA = {};
 
 function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// 入力のたびに重い処理（DATA全件を対象にしたfuzzyMatch走査や、それに伴う
+// 検索結果DOMの再構築）を実行すると、項目数が今後増えた時にタイプ中の
+// カクつきにつながる。索引の絞り込み欄では既にこの考え方で個別にデバウンス
+// していたが、地図検索・お気に入りリストへの項目追加検索は未対応だったため、
+// 共通のヘルパーに揃えて、検索系の入力欄すべてで同じように一呼吸置いてから
+// 処理するようにする。
+function debounce(fn, delay){
+  let t = null;
+  const debounced = (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
+  debounced.cancel = () => clearTimeout(t);
+  return debounced;
+}
 
 // ---------- 説明文中の [[リンク]] 記法 ----------
 function findLinkCandidates(token){
@@ -2871,16 +2890,41 @@ map.on('click', (ev)=>{
 });
 updateLabelVisibility();
 
+// 訪問記録（journal）は全会員が投稿できるサイト全体の公開データで、件数の
+// 上限は設けていない（投稿頻度のレート制限のみ）ため、地点ピンと同じく
+// 件数が増えるほど地図が重く・見づらくなる可能性がある。地点ピン側は既に
+// markerClusterGroupでクラスタ化してこの問題を回避しているので、訪問記録
+// マーカーも同じ仕組みに乗せる（専用のクラスタグループを分け、色・見た目は
+// 地点クラスタと区別できるようにしてある＝CSSの.holmes-journal-cluster-icon）。
+const journalMarkerClusterGroup = L.markerClusterGroup({
+  maxClusterRadius: function(zoom){
+    if(zoom >= 15) return 16;
+    if(zoom >= 12) return 30;
+    return 45;
+  },
+  disableClusteringAtZoom: DECLUSTER_ZOOM,
+  spiderfyOnMaxZoom: true,
+  showCoverageOnHover: false,
+  iconCreateFunction: function(cluster){
+    const count = cluster.getAllChildMarkers().length;
+    return L.divIcon({
+      html: `<div class="cluster-icon-inner">${count}</div>`,
+      className: 'holmes-cluster-icon holmes-journal-cluster-icon',
+      iconSize: L.point(30, 30)
+    });
+  }
+}).addTo(map);
 let journalMarkers = [];
 function renderJournalMarkers(){
-  journalMarkers.forEach(m=>map.removeLayer(m));
+  journalMarkerClusterGroup.clearLayers();
   journalMarkers = [];
   journal.forEach(j=>{
     if(!j.coords) return;
-    const m = L.marker(j.coords, {icon: makeJournalIcon()}).addTo(map);
+    const m = L.marker(j.coords, {icon: makeJournalIcon()});
     m.on('click', ()=>{ if(mapPickModeActive) return; openJournalDetail(j.id); });
     m.bindTooltip(escapeHtml(j.placeName), {direction:'top', offset:[0,-8]});
     journalMarkers.push(m);
+    journalMarkerClusterGroup.addLayer(m);
   });
 }
 
@@ -4341,9 +4385,10 @@ function openFavoriteListEditModal(listId){
 
   const addInput = document.getElementById('fle-add-input');
   const addResults = document.getElementById('fle-add-results');
-  addInput.addEventListener('input', ()=>{
-    const q = addInput.value.trim();
-    if(!q){ addResults.classList.remove('show'); addResults.innerHTML=''; return; }
+  // DATA全件を対象にしたfuzzyMatch走査＋結果DOMの再構築は、地図検索・索引の
+  // 絞り込み欄と同じくキー入力のたびに実行するとタイプ中のカクつきに
+  // つながるため、同じ共通ヘルパーで軽くデバウンスする。
+  const runAddSearch = debounce((q)=>{
     const matchIds = Object.keys(DATA)
       .filter(id=>!list.entityIds.includes(id) && fuzzyMatch(DATA[id].name, q))
       .slice(0, 8);
@@ -4364,6 +4409,11 @@ function openFavoriteListEditModal(listId){
         openFavoriteListEditModal(listId);
       });
     });
+  }, 100);
+  addInput.addEventListener('input', ()=>{
+    const q = addInput.value.trim();
+    if(!q){ runAddSearch.cancel(); addResults.classList.remove('show'); addResults.innerHTML=''; return; }
+    runAddSearch(q);
   });
 }
 
@@ -5045,18 +5095,26 @@ function renderRecentSearches(){
 mapSearchInput.addEventListener('focus', ()=>{
   if(!mapSearchInput.value.trim()) renderRecentSearches();
 });
+// ローカル一致（localMatches）はDATA全件を毎回走査するため、索引の絞り込み欄と
+// 同じ考え方で軽くデバウンスしてから描画する（外部ジオコーディングの方は
+// 元々500msデバウンスされていたが、こちらは未対応だったため統一した）。
+const runLocalMapSearch = debounce((q)=>{
+  renderSearchResults(localMatches(q), null, q);
+}, 100);
 mapSearchInput.addEventListener('input', ()=>{
   clearTimeout(searchDebounce);
   const q = mapSearchInput.value.trim();
   mapSearchClearBtn.style.display = q ? 'block' : 'none';
-  if(!q){ mapSearchResults.classList.remove('show'); return; }
-  renderSearchResults(localMatches(q), null, q);
+  if(!q){ runLocalMapSearch.cancel(); mapSearchResults.classList.remove('show'); return; }
+  runLocalMapSearch(q);
   searchDebounce = setTimeout(async ()=>{
     const results = await geocodeSearch(q);
     renderSearchResults(localMatches(q), results===null ? undefined : results, q);
   }, 500);
 });
 mapSearchClearBtn.addEventListener('click', ()=>{
+  clearTimeout(searchDebounce);
+  runLocalMapSearch.cancel(); // 直前の入力に対するデバウンス待ちが後から発火して結果を出し直さないよう止める
   mapSearchInput.value = '';
   mapSearchClearBtn.style.display = 'none';
   mapSearchResults.classList.remove('show');
@@ -5207,16 +5265,16 @@ document.getElementById('indexClose').addEventListener('click', ()=>document.get
 {
   const indexFilterInput = document.getElementById('indexFilterInput');
   const indexFilterClearBtn = document.getElementById('indexFilterClearBtn');
-  let indexFilterDebounce = null;
+  const runIndexFilter = debounce((val)=>{
+    indexFilterQuery = val;
+    renderIndex();
+  }, 120);
   indexFilterInput.addEventListener('input', ()=>{
     indexFilterClearBtn.style.display = indexFilterInput.value ? 'inline-block' : 'none';
-    clearTimeout(indexFilterDebounce);
-    indexFilterDebounce = setTimeout(()=>{
-      indexFilterQuery = indexFilterInput.value;
-      renderIndex();
-    }, 120);
+    runIndexFilter(indexFilterInput.value);
   });
   indexFilterClearBtn.addEventListener('click', ()=>{
+    runIndexFilter.cancel(); // 直前の入力に対するデバウンス待ちが後から発火して上書きしないよう先に止める
     indexFilterInput.value = '';
     indexFilterClearBtn.style.display = 'none';
     indexFilterQuery = '';
