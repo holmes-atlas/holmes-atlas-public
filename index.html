@@ -626,7 +626,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .pin-preview-body{padding:10px 12px 11px;}
 .pin-preview-name{font-family:'Playfair Display',serif;font-size:.96rem;color:var(--fog);margin:0 0 4px;line-height:1.32;}
 .pin-preview-desc{font-size:.74rem;color:var(--slate);line-height:1.5;margin:0 0 7px;}
+.pin-preview-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .pin-preview-more{font-size:.72rem;color:var(--brass-light);font-weight:600;}
+.pin-preview-fav-btn{flex:none;background:none;border:1px solid rgba(230,224,209,.35);color:var(--fog);font-size:.92rem;line-height:1;padding:4px 8px;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.pin-preview-fav-btn:hover{border-color:var(--brass-light);}
+.pin-preview-fav-btn.active{background:var(--brass);border-color:var(--brass);color:#fff;}
 
 @media (max-width:760px){
   .app{grid-template-columns:1fr;grid-template-rows:56px 1fr;}
@@ -3155,12 +3159,16 @@ function pinPopupSnippet(desc, maxLen){
 function renderPinPreviewPopupHtml(e, id){
   const imgUrl = (e.photos && e.photos.length && e.photos[0].url) ? e.photos[0].url : e.image;
   const snippet = pinPopupSnippet(e.desc, 46);
+  const isFav = favoriteListsContaining(id).length > 0;
   return `<div class="pin-preview-card" data-popup-open="${id}">
     ${imgUrl ? `<img class="pin-preview-img" src="${escapeAttr(imgUrl)}" alt="" loading="lazy">` : ''}
     <div class="pin-preview-body">
       <div class="pin-preview-name">${escapeHtml(e.name)}</div>
       ${snippet ? `<div class="pin-preview-desc">${escapeHtml(snippet)}</div>` : ''}
-      <div class="pin-preview-more">詳細を見る ›</div>
+      <div class="pin-preview-footer">
+        <span class="pin-preview-more">詳細を見る ›</span>
+        <button type="button" class="pin-preview-fav-btn${isFav?' active':''}" data-fav-toggle="${id}" title="お気に入りに追加" aria-label="お気に入りに追加">${isFav?'★':'☆'}</button>
+      </div>
     </div>
   </div>`;
 }
@@ -3175,9 +3183,19 @@ function openPlacePreviewPopup(id){
   // LeafletのポップアップはdisableClickPropagationでクリックの伝播をポップアップ自身の
   // 要素で止めているため、documentへのイベント委譲では拾えない。ポップアップのDOMに
   // 直接リスナーを付ける。
-  popup.getElement()?.querySelector('[data-popup-open]')?.addEventListener('click', ()=>{
+  const popupEl = popup.getElement();
+  popupEl?.querySelector('[data-popup-open]')?.addEventListener('click', ()=>{
     map.closePopup();
     showEntity(id);
+  });
+  // ☆お気に入りボタンはカード全体のクリック（詳細ページへ遷移）に巻き込まれない
+  // よう、必ずstopPropagationする。既存の「詳細ページ内の☆お気に入りボタン」
+  // （favToggleBtn）と同じ、リスト選択モーダルを開く方式に揃えている（お気に入りは
+  // 複数リストに分かれているため、ここで単純なON/OFFトグルにはできないため）。
+  popupEl?.querySelector('[data-fav-toggle]')?.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    if(!currentUser){ showToast('お気に入り登録にはログインが必要です。'); return; }
+    openFavoriteListsModal(id);
   });
 }
 function renderMarkers(){
