@@ -618,6 +618,11 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .proposal-meta{font-size:.72rem;opacity:.65;margin-bottom:8px;}
 .proposal-detail{font-size:.85rem;line-height:1.6;margin-bottom:10px;}
 .proposal-actions{display:flex;gap:8px;}
+/* 承認・却下履歴カード。操作ボタンの代わりにステータス表示＋項目ページへの
+   リンクだけを持つので、通常の.proposal-cardより軽い見た目にしている。 */
+.history-status-approved{color:var(--teal);font-weight:700;font-size:.78rem;}
+.history-status-rejected{color:var(--burgundy);font-weight:700;font-size:.78rem;}
+.history-card .link-btn{font-size:.8rem;}
 .proposal-status{display:inline-block;font-size:.68rem;padding:1px 8px;border-radius:2px;margin-left:4px;}
 .proposal-status-pending{background:var(--slate);color:#fff;}
 .proposal-status-approved{background:var(--moss);color:#fff;}
@@ -5121,9 +5126,15 @@ document.getElementById('myEditsBtn').addEventListener('click', ()=>{
   openMyEditsModal();
 });
 
+// 審査ダッシュボードの「承認・却下履歴」に出す件数の上限。無制限にすると
+// サイトが育つほど一覧が際限なく伸びてしまうため、直近分だけに絞っている。
+const REVIEW_HISTORY_LIMIT = 50;
 function openReviewDashboard(){
   const pending = proposals.filter(p=>p.status==='pending').sort((a,b)=>a.createdAt-b.createdAt);
   const pendingReports = reports.filter(r=>r.status==='pending').sort((a,b)=>a.createdAt-b.createdAt);
+  const history = proposals.filter(p=>p.status==='approved' || p.status==='rejected')
+    .sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt))
+    .slice(0, REVIEW_HISTORY_LIMIT);
   modalBody.innerHTML = `
     <h3>審査ダッシュボード</h3>
     <div class="modal-sub">${pending.length}件の提案、${pendingReports.length}件の通報があります。</div>
@@ -5134,6 +5145,10 @@ function openReviewDashboard(){
     <div class="review-section-label">通報</div>
     <div class="review-list">
       ${pendingReports.length===0 ? '<div class="alias-list-empty">今のところ通報はありません。</div>' : pendingReports.map(r=>renderReportCard(r)).join('')}
+    </div>
+    <div class="review-section-label">承認・却下履歴（直近${REVIEW_HISTORY_LIMIT}件）</div>
+    <div class="review-list">
+      ${history.length===0 ? '<div class="alias-list-empty">まだ履歴はありません。</div>' : history.map(p=>renderHistoryCard(p)).join('')}
     </div>
     <div class="modal-actions"><button class="modal-cancel" id="review-close">閉じる</button></div>`;
   overlay.classList.add('open');
@@ -5149,6 +5164,32 @@ function openReviewDashboard(){
     document.getElementById('reject-'+p.id)?.addEventListener('click', ()=>rejectProposal(p.id));
     document.getElementById('ban-'+p.id)?.addEventListener('click', ()=>banUser(p.authorId, p.authorName));
   });
+  modalBody.querySelectorAll('[data-history-goto]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const targetId = btn.dataset.historyGoto;
+      closeModal();
+      showEntity(targetId);
+    });
+  });
+}
+// 履歴カード：承認/却下いずれも表示するが、操作ボタン（承認する／却下する等）は
+// 出さず、代わりに対象の項目ページへ飛べるリンクだけを付ける。
+// 「新規追加」提案は承認された時点で初めてentityIdが決まる（approveProposal内で
+// 発行してp.newEntityIdに保持）ため、却下された新規追加提案にはリンク先がない。
+// 「別名の追加」提案は特定の項目ページを持たないため、そもそもリンク対象外。
+function renderHistoryCard(p){
+  const kindLabel = p.kind==='new' ? '新規追加' : (p.kind==='photo' ? '写真の追加' : (p.kind==='alias' ? '別名の追加' : '編集'));
+  const targetName = p.kind==='new' ? p.draft.name : (p.kind==='alias' ? p.draft.ja : (DATA[p.targetId]?.name || p.targetId));
+  const dateStr = new Date(p.resolvedAt || p.createdAt).toLocaleString('ja-JP');
+  const isApproved = p.status === 'approved';
+  const statusHtml = isApproved ? '<span class="history-status-approved">✓ 承認済み</span>' : '<span class="history-status-rejected">✕ 却下</span>';
+  const linkId = p.kind==='new' ? p.newEntityId : (p.kind!=='alias' ? p.targetId : null);
+  const canLink = linkId && DATA[linkId];
+  return `<div class="proposal-card history-card">
+    <div class="proposal-head"><span class="proposal-kind">${kindLabel}</span> <strong>${escapeHtml(targetName)}</strong> ${statusHtml}</div>
+    <div class="proposal-meta">${escapeHtml(p.authorName)} ・ ${dateStr}</div>
+    ${canLink ? `<button type="button" class="link-btn" data-history-goto="${escapeAttr(linkId)}">項目ページを見る ›</button>` : ''}
+  </div>`;
 }
 function renderProposalCard(p){
   const kindLabel = p.kind==='new' ? '新規追加' : (p.kind==='photo' ? '写真の追加' : (p.kind==='alias' ? '別名の追加' : '編集'));
@@ -5215,6 +5256,7 @@ async function approveProposal(propId){
       overrides[relId].extraRelated = Array.from(extra);
     });
     await Promise.all((p.draft.related||[]).map(relId=>rpcObjNestedArrayAddUnique('p-overrides', relId, 'extraRelated', newId)));
+    p.newEntityId = newId;
   } else if(p.kind==='photo'){
     overrides[p.targetId] = overrides[p.targetId] || {};
     overrides[p.targetId].extraPhotos = overrides[p.targetId].extraPhotos || [];
@@ -5225,7 +5267,12 @@ async function approveProposal(propId){
     await rpcObjMerge('p-overrides', p.targetId, p.draft);
   }
   p.status = 'approved';
-  await rpcArrPatch('p-proposals', propId, {status:'approved'});
+  p.resolvedAt = Date.now();
+  // 履歴（審査ダッシュボードの「承認・却下履歴」）から項目ページへ飛べるように、
+  // 承認日時と、新規追加の場合は生成したentityIdもp-proposals側に残しておく。
+  const approvePatch = {status:'approved', resolvedAt:p.resolvedAt};
+  if(p.kind==='new') approvePatch.newEntityId = p.newEntityId;
+  await rpcArrPatch('p-proposals', propId, approvePatch);
   DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
   showToast('承認しました。');
   updateReviewCountBadge();
@@ -5235,7 +5282,8 @@ async function rejectProposal(propId){
   const p = proposals.find(x=>x.id===propId);
   if(!p) return;
   p.status = 'rejected';
-  await rpcArrPatch('p-proposals', propId, {status:'rejected'});
+  p.resolvedAt = Date.now();
+  await rpcArrPatch('p-proposals', propId, {status:'rejected', resolvedAt:p.resolvedAt});
   showToast('却下しました。');
   updateReviewCountBadge();
   openReviewDashboard();
