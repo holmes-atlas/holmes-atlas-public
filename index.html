@@ -117,6 +117,18 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .index-close:hover{color:var(--burgundy);}
 .index-guide-btn{flex:none;display:block;width:calc(100% - 20px);margin:10px 10px 0;background:var(--teal);border:none;color:#fff;font-size:.8rem;font-weight:600;padding:8px 0;border-radius:3px;cursor:pointer;text-align:center;font-family:inherit;}
 .index-guide-btn:hover{background:#264d4a;}
+/* 索引欄の「最近の更新」。サイトが実際に動いていることが初見の人にも伝わるよう、
+   承認済みの提案（新規追加・編集・写真追加）を新着順に数件だけ表示する。
+   承認履歴の一部（resolvedAt）をそのまま使い回しているので、この機能導入前に
+   承認された提案は出てこない（自然に流れていくログなので実害はない）。 */
+.recent-updates{flex:none;margin:10px 10px 0;padding:10px 12px;background:rgba(171,131,71,.07);border:1px solid var(--line);border-radius:4px;}
+.recent-updates-label{font-size:.74rem;font-weight:600;color:var(--brass-light);margin-bottom:6px;letter-spacing:.02em;}
+.recent-update-row{display:block;width:100%;text-align:left;background:none;border:none;color:var(--fog);font-size:.8rem;padding:3px 0;cursor:pointer;font-family:inherit;line-height:1.4;}
+.recent-update-row:hover{color:var(--brass-light);}
+.recent-update-row-static{cursor:default;}
+.recent-update-row-static:hover{color:var(--fog);}
+.recent-update-kind{display:inline-block;background:var(--teal);color:#fff;font-size:.64rem;padding:0 6px;border-radius:2px;margin-right:5px;vertical-align:1px;}
+.recent-update-time{color:var(--slate);font-size:.74rem;}
 .index-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 0 20px;}
 .index-filter-empty{padding:16px;font-size:.82rem;color:var(--slate);font-style:italic;}
 .index-group-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:var(--ink-2);border:none;font-weight:600;font-size:.78rem;color:var(--brass-light);padding:9px 16px;margin:0;border-bottom:1px solid var(--line);border-top:1px solid var(--line);cursor:pointer;}
@@ -648,6 +660,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 }
 .danger-zone{margin-top:22px;padding-top:14px;border-top:1px dashed var(--burgundy);text-align:right;}
 .review-count-badge{background:var(--burgundy);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px;}
+.my-edits-count-badge{background:var(--teal);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px;}
 .review-list{max-height:420px;overflow-y:auto;margin:14px 0;}
 .proposal-card{background:var(--parchment-2);border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin-bottom:10px;color:var(--charcoal);}
 .proposal-head{font-size:.95rem;margin-bottom:2px;}
@@ -767,7 +780,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <div class="action-btns" id="actionBtns">
       <button class="hbtn primary" id="addEntityBtn">＋ 新しい項目を追加</button>
       <button class="hbtn" id="addJournalBtn">＋ 訪問記録を追加</button>
-      <button class="hbtn" id="myEditsBtn">編集一覧</button>
+      <button class="hbtn" id="myEditsBtn">編集一覧<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
       <button class="hbtn" id="timelineToggle">タイムライン</button>
       <button class="hbtn" id="exportBtn">データをエクスポート</button>
       <span class="auth-area" id="authArea"></span>
@@ -784,6 +797,10 @@ body.map-picking .leaflet-container{cursor:crosshair;}
       <button class="index-close" id="indexClose" title="索引を閉じる" aria-label="索引を閉じる">×</button>
     </div>
     <button type="button" class="index-guide-btn" id="indexGuideBtn">📖 使い方ガイド</button>
+    <div class="recent-updates" id="recentUpdatesBlock" style="display:none;">
+      <div class="recent-updates-label">🕐 最近の更新</div>
+      <div class="recent-updates-list" id="recentUpdatesList"></div>
+    </div>
     <div class="index-scroll" id="indexScroll"></div>
   </div>
 
@@ -1109,6 +1126,7 @@ function renderAuthArea(){
     el.innerHTML = `<button class="hbtn" id="accountBtn">アカウント</button>`;
     document.getElementById('accountBtn').addEventListener('click', openAccountModal);
   }
+  updateMyEditsCountBadge();
 }
 function openAccountModal(){
   if(!currentUser){
@@ -4995,6 +5013,66 @@ function updateReviewCountBadge(){
   const count = proposals.filter(p=>p.status==='pending').length + reports.filter(r=>r.status==='pending').length;
   badge.textContent = count > 0 ? ' '+count : '';
 }
+// ---------- 編集一覧の未読バッジ ----------
+// 審査担当者側には「未承認の提案が何件あるか」のバッジがあるのに、提案を送った
+// 本人側には「自分の提案がどうなったか」を知らせる手段が無く、自分から編集一覧を
+// 開きにいかないと結果が分からなかった。この端末で最後に編集一覧を開いた日時を
+// localStorageに覚えておき、それより後に承認・却下された自分の提案の件数を
+// バッジとして出す（サーバー側に既読状態を持たせるほどのものではないので、
+// あえて端末ローカルの簡易実装にしている）。
+function myEditsSeenKey(uid){ return 'holmes-atlas-seen-resolved:' + uid; }
+function getMyEditsLastSeen(){
+  if(!currentUser) return 0;
+  try{ return Number(localStorage.getItem(myEditsSeenKey(currentUser.id))) || 0; }catch(e){ return 0; }
+}
+function markMyEditsSeen(){
+  if(!currentUser) return;
+  try{ localStorage.setItem(myEditsSeenKey(currentUser.id), String(Date.now())); }catch(e){}
+}
+function updateMyEditsCountBadge(){
+  const badge = document.getElementById('myEditsCountBadge');
+  if(!badge) return;
+  if(!currentUser){ badge.textContent = ''; return; }
+  const lastSeen = getMyEditsLastSeen();
+  const count = proposals.filter(p=>p.authorId===currentUser.id && (p.status==='approved'||p.status==='rejected') && p.resolvedAt && p.resolvedAt>lastSeen).length;
+  badge.textContent = count > 0 ? ' '+count : '';
+}
+// ---------- 索引欄「最近の更新」 ----------
+function timeAgoText(ts){
+  const diffMin = Math.round((Date.now() - ts) / 60000);
+  if(diffMin < 1) return 'たった今';
+  if(diffMin < 60) return `${diffMin}分前`;
+  const diffH = Math.round(diffMin / 60);
+  if(diffH < 24) return `${diffH}時間前`;
+  const diffD = Math.round(diffH / 24);
+  if(diffD < 30) return `${diffD}日前`;
+  return fmtDate(ts);
+}
+const RECENT_UPDATES_LIMIT = 5;
+function renderRecentUpdates(){
+  const block = document.getElementById('recentUpdatesBlock');
+  const list = document.getElementById('recentUpdatesList');
+  if(!block || !list) return;
+  const recent = proposals
+    .filter(p => p.status==='approved' && p.resolvedAt)
+    .sort((a,b)=>b.resolvedAt-a.resolvedAt)
+    .slice(0, RECENT_UPDATES_LIMIT);
+  if(recent.length === 0){ block.style.display = 'none'; return; }
+  block.style.display = '';
+  list.innerHTML = recent.map(p=>{
+    const kindLabel = p.kind==='new' ? '追加' : (p.kind==='photo' ? '写真追加' : (p.kind==='alias' ? '別名追加' : '編集'));
+    const targetName = p.kind==='new' ? p.draft.name : (p.kind==='alias' ? p.draft.ja : (DATA[p.targetId]?.name || p.targetId));
+    const linkId = p.kind==='new' ? p.newEntityId : (p.kind!=='alias' ? p.targetId : null);
+    const canLink = linkId && DATA[linkId];
+    const inner = `<span class="recent-update-kind">${kindLabel}</span>${escapeHtml(targetName)}<span class="recent-update-time">・${timeAgoText(p.resolvedAt)}</span>`;
+    return canLink
+      ? `<button type="button" class="recent-update-row" data-recent-goto="${escapeAttr(linkId)}">${inner}</button>`
+      : `<div class="recent-update-row recent-update-row-static">${inner}</div>`;
+  }).join('');
+  list.querySelectorAll('[data-recent-goto]').forEach(btn=>{
+    btn.addEventListener('click', ()=>showEntity(btn.dataset.recentGoto));
+  });
+}
 function renderReportCard(r){
   const j = journal.find(x=>x.id===r.journalId);
   const dateStr = new Date(r.createdAt).toLocaleString('ja-JP');
@@ -5168,6 +5246,8 @@ function openMyEditsModal(){
 document.getElementById('myEditsBtn').addEventListener('click', ()=>{
   if(!currentUser){ showToast('編集一覧の閲覧にはログインが必要です。'); return; }
   openMyEditsModal();
+  markMyEditsSeen();
+  updateMyEditsCountBadge();
 });
 
 // 審査ダッシュボードの「承認・却下履歴」に出す件数の上限。無制限にすると
@@ -5320,6 +5400,8 @@ async function approveProposal(propId){
   DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
   showToast('承認しました。');
   updateReviewCountBadge();
+  updateMyEditsCountBadge();
+  renderRecentUpdates();
   openReviewDashboard();
 }
 async function rejectProposal(propId){
@@ -5330,6 +5412,7 @@ async function rejectProposal(propId){
   await rpcArrPatch('p-proposals', propId, {status:'rejected', resolvedAt:p.resolvedAt});
   showToast('却下しました。');
   updateReviewCountBadge();
+  updateMyEditsCountBadge();
   openReviewDashboard();
 }
 function openDeleteConfirmModal(targetId, entityName){
@@ -6559,6 +6642,12 @@ document.addEventListener('click', (ev)=>{ if(!ev.target.closest('.action-btns')
   renderIndex();
   populateViewFilterMenu();
   populateFavFilterMenu();
+  renderRecentUpdates();
+  // renderAuthArea()は上でloadAll()より先に呼んでいるため、その時点ではproposals/reportsが
+  // まだ空で、審査バッジ・編集一覧バッジのどちらも0件のまま出てしまっていた。
+  // loadAll()完了後にここで数え直す。
+  updateReviewCountBadge();
+  updateMyEditsCountBadge();
   // URLに ?id=項目ID が付いていれば、その項目の詳細を開いた状態で起動する
   // （SNSなどで共有された個別ページのリンクから直接開けるようにするため）
   const initialEntityId = new URLSearchParams(location.search).get('id');
