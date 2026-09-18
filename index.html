@@ -5,7 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ホームズ・アトラス</title>
 <meta name="description" content="シャーロック・ホームズ作品に登場する地名・人物・作品情報を、地図と索引でたどれるファンサイトです。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='14' fill='%232b2a28'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%23c9a94f' font-family='Georgia,serif'%3EH%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- PWA（ホーム画面に追加）対応。manifest.jsonとicons/フォルダはHTMLと
+     同じ階層に置く。サービスワーカーはあえて入れていない（オフライン
+     キャッシュを持たせると、サイトを更新するたびに古い内容が
+     キャッシュから表示され続けてしまう不具合の元になりやすいため）。
+     その代わりAndroidの自動インストールバナーは出ず、iOS同様「共有→
+     ホーム画面に追加」の手動操作が必要になる。 -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#101012">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ホームズ・アトラス">
 <meta property="og:type" content="website">
 <meta property="og:title" content="ホームズ・アトラス">
 <meta property="og:description" content="シャーロック・ホームズ作品に登場する地名・人物・作品情報を、地図と索引でたどれるファンサイトです。">
