@@ -115,8 +115,6 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .index-filter-clear-btn:hover{color:var(--burgundy);}
 .index-close{display:none;flex:none;background:none;border:none;font-size:1.5rem;line-height:1;color:var(--slate);cursor:pointer;padding:2px 6px;}
 .index-close:hover{color:var(--burgundy);}
-.index-guide-btn{flex:none;display:block;width:calc(100% - 20px);margin:10px 10px 0;background:var(--teal);border:none;color:#fff;font-size:.8rem;font-weight:600;padding:8px 0;border-radius:3px;cursor:pointer;text-align:center;font-family:inherit;}
-.index-guide-btn:hover{background:#264d4a;}
 /* 索引欄の「最近の更新」。サイトが実際に動いていることが初見の人にも伝わるよう、
    承認済みの提案（新規追加・編集・写真追加）を新着順に数件だけ表示する。
    承認履歴の一部（resolvedAt）をそのまま使い回しているので、この機能導入前に
@@ -778,6 +776,7 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <div class="header-spacer"></div>
     <button class="hbtn index-toggle" id="indexToggle">索引</button>
     <div class="action-btns" id="actionBtns">
+      <button class="hbtn" id="guideBtn">📖 使い方ガイド</button>
       <button class="hbtn primary" id="addEntityBtn">＋ 新しい項目を追加</button>
       <button class="hbtn" id="addJournalBtn">＋ 訪問記録を追加</button>
       <button class="hbtn" id="myEditsBtn">編集一覧<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
@@ -796,7 +795,6 @@ body.map-picking .leaflet-container{cursor:crosshair;}
       </div>
       <button class="index-close" id="indexClose" title="索引を閉じる" aria-label="索引を閉じる">×</button>
     </div>
-    <button type="button" class="index-guide-btn" id="indexGuideBtn">📖 使い方ガイド</button>
     <div class="recent-updates" id="recentUpdatesBlock" style="display:none;">
       <div class="recent-updates-label">🕐 最近の更新</div>
       <div class="recent-updates-list" id="recentUpdatesList"></div>
@@ -4463,7 +4461,7 @@ function closeModal(){
     document.title = 'ホームズ・アトラス';
   }
 }
-// 使い方ガイド。索引欄の常設ボタン（indexGuideBtn）から開く、読み物専用の
+// 使い方ガイド。ヘッダーの「☰メニュー」内のボタン（guideBtn）から開く、読み物専用の
 // モーダル。機能が増えてきたので、初めて訪れた人でも一通りの使い方が
 // つかめるよう、セクションごとにまとめている。内容はここ（GUIDE_SECTIONS）を
 // 直すだけで良いよう、見出しと本文（HTML断片の配列）に分けている。
@@ -6611,7 +6609,7 @@ document.addEventListener('click', (ev)=>{ if(!ev.target.closest('.nearby-panel'
 // ---------- 索引トグル・モバイルメニュー ----------
 document.getElementById('indexToggle').addEventListener('click', ()=>document.getElementById('index').classList.toggle('open'));
 document.getElementById('indexClose').addEventListener('click', ()=>document.getElementById('index').classList.remove('open'));
-document.getElementById('indexGuideBtn').addEventListener('click', openUsageGuideModal);
+document.getElementById('guideBtn').addEventListener('click', openUsageGuideModal);
 
 // ---------- 索引の絞り込みボックス ----------
 // #indexFilterInput は毎回のrenderIndex()で作り直されない静的な要素なので、
