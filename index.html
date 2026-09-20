@@ -6336,12 +6336,18 @@ function renderSearchResults(localIds, externalResults, query){
         // 従来通り説明ページを直接開く
         showEntity(id);
       }
+      cancelPendingMapSearch();
       mapSearchResults.classList.remove('show'); mapSearchInput.value='';
     });
   });
   if(externalResults){
     mapSearchResults.querySelectorAll('[data-ext]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{ saveRecentSearch(externalResults[parseInt(btn.dataset.ext)].display_name); selectExternalLocation(externalResults[parseInt(btn.dataset.ext)]); mapSearchResults.classList.remove('show'); });
+      btn.addEventListener('click', ()=>{
+        saveRecentSearch(externalResults[parseInt(btn.dataset.ext)].display_name);
+        selectExternalLocation(externalResults[parseInt(btn.dataset.ext)]);
+        cancelPendingMapSearch();
+        mapSearchResults.classList.remove('show'); mapSearchInput.value='';
+      });
     });
   }
   const aliasBtn = document.getElementById('aliasRegisterBtn');
@@ -6399,6 +6405,16 @@ function selectExternalLocation(r){
   externalMarker.openPopup();
 }
 let searchDebounce;
+// 検索結果から項目を選んで地図を移動させた後も、その直前に予約されていた
+// 外部ジオコーディングの遅延実行（searchDebounce）やローカル検索の
+// デバウンス（runLocalMapSearch）が消えずに残っていると、数百ms後に
+// 古い検索結果が勝手に再描画され、閉じたはずの候補一覧が地図の上に
+// 再度浮かんでくる不具合になる。結果を選んで閉じる箇所では必ずこれを呼び、
+// 予約済みの再描画を握りつぶす。
+function cancelPendingMapSearch(){
+  clearTimeout(searchDebounce);
+  runLocalMapSearch.cancel();
+}
 const mapSearchClearBtn = document.getElementById('mapSearchClearBtn');
 function recentSearchKey(){
   // ログイン中のアカウントごとに履歴を分ける（同じ端末でアカウントを切り替えても
@@ -6451,8 +6467,7 @@ mapSearchInput.addEventListener('input', ()=>{
   }, 500);
 });
 mapSearchClearBtn.addEventListener('click', ()=>{
-  clearTimeout(searchDebounce);
-  runLocalMapSearch.cancel(); // 直前の入力に対するデバウンス待ちが後から発火して結果を出し直さないよう止める
+  cancelPendingMapSearch();
   mapSearchInput.value = '';
   mapSearchClearBtn.style.display = 'none';
   mapSearchResults.classList.remove('show');
