@@ -486,6 +486,11 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .add-journal-btn{font-size:.78rem;background:var(--teal);border:none;color:#fff;padding:5px 11px;border-radius:3px;cursor:pointer;}
 .journal-card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin-bottom:10px;}
 .journal-card img{width:100%;max-height:160px;object-fit:cover;border-radius:3px;margin-bottom:8px;display:block;}
+/* 訪問記録の詳細モーダル（個別リンクや通知から開いた単独表示）だけは、一覧に
+   並ぶカードと違って1枚をじっくり見せる場面なので、160pxに切り詰めずに
+   縦長・横長どちらの写真も全体を表示する（幅は容器に収め、縦は画面の
+   高さを超えすぎないよう緩めに上限を設けるだけにとどめる）。 */
+.journal-card-detail img{width:auto;height:auto;max-width:100%;max-height:65vh;object-fit:contain;margin:0 auto 8px;}
 .journal-card .jc-place{font-weight:600;font-size:.9rem;color:var(--ink);margin-bottom:3px;}
 .journal-card .jc-comment{font-size:.88rem;line-height:1.6;margin:0 0 6px;white-space:pre-wrap;}
 .journal-card .jc-meta{font-size:.74rem;color:var(--slate);}
@@ -5816,7 +5821,7 @@ function renderEntityJournalSection(entityId){
       ${html}
     </div>`;
 }
-function renderJournalCard(j){
+function renderJournalCard(j, opts={}){
   const isPrivate = j.visibility === 'private';
   const liked = !isPrivate && currentUser && (j.likedBy||[]).includes(currentUser.id);
   const likeCount = isPrivate ? 0 : (j.likedBy||[]).length;
@@ -5828,7 +5833,7 @@ function renderJournalCard(j){
         <button class="jc-report-btn" data-report-journal="${j.id}">通報</button>
         ${renderJournalShareButtons(j)}`;
   return `
-    <div class="journal-card ${isPrivate?'journal-card-private':''}" data-journal-id="${j.id}">
+    <div class="journal-card ${isPrivate?'journal-card-private':''} ${opts.detail?'journal-card-detail':''}" data-journal-id="${j.id}">
       ${isPrivate ? '<div class="jc-private-badge">🔒 自分だけの記録</div>' : ''}
       ${j.image ? `<img src="${escapeAttr(j.image)}" alt="">` : ''}
       <p class="jc-comment">${escapeHtml(j.comment)}</p>
@@ -6163,7 +6168,7 @@ function openJournalDetail(id, opts={}){
   modalBody.innerHTML = `
     <h3>${escapeHtml(j.placeName)}</h3>
     <div class="modal-sub">${j.visitedDate?('訪問日: '+escapeHtml(j.visitedDate)):''}</div>
-    ${renderJournalCard(j)}
+    ${renderJournalCard(j, {detail:true})}
     <div class="modal-actions"><button class="modal-cancel" id="jd-close">閉じる</button></div>`;
   overlay.classList.add('open');
   document.getElementById('jd-close').addEventListener('click', closeModal);
