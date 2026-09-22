@@ -390,6 +390,14 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .place-label-special::before{border-top-color:var(--burgundy)!important;}
 .leaflet-journal-icon{background:var(--teal);border:2px solid var(--parchment);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5);}
 .leaflet-journal-icon svg{width:13px;height:13px;}
+/* 同じ座標に別のピン（地点自身、または他の訪問記録）が重なる場合だけ使う、
+   「線で本来の位置とつなぐ」タイプのアイコン。外側の箱自体はクリック判定を
+   持たせたくない（本来の座標の真上をタップした時に誤って反応してほしくない）
+   ので透明・pointer-events:noneにし、実際のバッジ部分だけ有効にする。 */
+.leaflet-journal-icon-offset{background:transparent;pointer-events:none;}
+.leaflet-journal-icon-offset .jmi-line{position:absolute;top:0;left:0;overflow:visible;pointer-events:none;}
+.leaflet-journal-icon-offset .jmi-badge{position:absolute;width:24px;height:24px;background:var(--teal);border:2px solid var(--parchment);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;}
+.leaflet-journal-icon-offset .jmi-badge svg{width:13px;height:13px;}
 /* 訪問記録のクラスタは地点クラスタ（濃紺）と見分けられるよう、訪問記録ピン
    自体と同じteal系の色にする。has-selectedのパルス演出は地点側のみで使う
    ものなのでここでは使わない（journalMarkerClusterGroup専用のクラス）。 */
@@ -3636,23 +3644,44 @@ function makeSpecialIcon(){
     html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="21" y2="21"/></svg>',
     iconSize:[36,36], iconAnchor:[18,18]});
 }
-// offset: {dx,dy}を渡すと、実際の座標はそのままに、見た目の表示位置だけを
-// そのぶんずらす（当たり判定＝クリック領域も見た目の位置についてくる）。
-// 同じ座標に複数のピンが重なってしまう場合（紐付いた地点ピンと、あるいは
-// 訪問記録同士）に、少しずつ位置をずらして両方・全部をタップできるようにする。
+// offset: {dx,dy}を渡すと、実際の座標はそのままに、見た目のピンの表示位置
+// だけをそのぶんずらす。同じ座標に複数のピンが重なってしまう場合（紐付いた
+// 地点ピンと、あるいは訪問記録同士）に、少しずつ位置をずらして両方・全部を
+// タップできるようにするための仕組み。
+// ずらす場合は、単にアイコンをずらすだけだと「近くの別の場所」なのか
+// 「同じ地点の別ピン」なのか地図上で分かりにくいので、アイコンを少し大きめの
+// 箱にして、本来の座標の位置に小さな点を、そこからピンまで細い線を引いて
+// 見た目でも繋がりが分かるようにしている（外箱自体はクリック判定を持たせず、
+// ピンのバッジ部分だけタップできるようにする）。
 function makeJournalIcon(offset){
   const dx = offset ? offset.dx : 0;
   const dy = offset ? offset.dy : 0;
-  return L.divIcon({className:'leaflet-journal-icon',
-    html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>',
-    iconSize:[24,24], iconAnchor:[12-dx, 12-dy]});
+  if(!dx && !dy){
+    return L.divIcon({className:'leaflet-journal-icon',
+      html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>',
+      iconSize:[24,24], iconAnchor:[12,12]});
+  }
+  const half = 12, pad = 6;
+  const minX = Math.min(0,dx) - half - pad, maxX = Math.max(0,dx) + half + pad;
+  const minY = Math.min(0,dy) - half - pad, maxY = Math.max(0,dy) + half + pad;
+  const w = maxX - minX, h = maxY - minY;
+  const ax = -minX, ay = -minY;           // 箱の中での「本来の座標」の位置
+  const px = ax + dx, py = ay + dy;       // 箱の中での「ピンを表示する位置」
+  const html = `<svg class="jmi-line" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+    + `<line x1="${ax}" y1="${ay}" x2="${px}" y2="${py}" stroke="#3a3226" stroke-width="1.6" stroke-dasharray="2.5 3" opacity="0.75"/>`
+    + `<circle cx="${ax}" cy="${ay}" r="2.6" fill="#3a3226" opacity="0.8"/>`
+    + `</svg>`
+    + `<div class="jmi-badge" style="left:${px-12}px;top:${py-12}px;">`
+    + `<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>`
+    + `</div>`;
+  return L.divIcon({className:'leaflet-journal-icon-offset', html, iconSize:[w,h], iconAnchor:[ax,ay]});
 }
 // slot=0は「ずらさない」（＝紐付いた地点ピン自身、または重複のない単独の
 // 訪問記録ピンの位置）。slot>=1のピンを、中心の周りに少しずつ広がる輪の上に
 // 並べていく。1つの輪に収まらない件数になったら、外側にもう一段大きな輪を作る。
 function journalMarkerOffset(slot){
   if(slot <= 0) return null;
-  const ringSize = 8, baseRadius = 10, ringGap = 14;
+  const ringSize = 8, baseRadius = 30, ringGap = 40;
   const idx = slot - 1;
   const ring = Math.floor(idx / ringSize);
   const pos = idx % ringSize;
