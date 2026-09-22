@@ -485,12 +485,12 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .journal-section-head h4{font-weight:600;font-size:.83rem;color:var(--slate);margin:0;}
 .add-journal-btn{font-size:.78rem;background:var(--teal);border:none;color:#fff;padding:5px 11px;border-radius:3px;cursor:pointer;}
 .journal-card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin-bottom:10px;}
-.journal-card img{width:100%;max-height:160px;object-fit:cover;border-radius:3px;margin-bottom:8px;display:block;}
-/* 訪問記録の詳細モーダル（個別リンクや通知から開いた単独表示）だけは、一覧に
-   並ぶカードと違って1枚をじっくり見せる場面なので、160pxに切り詰めずに
-   縦長・横長どちらの写真も全体を表示する（幅は容器に収め、縦は画面の
-   高さを超えすぎないよう緩めに上限を設けるだけにとどめる）。 */
-.journal-card-detail img{width:auto;height:auto;max-width:100%;max-height:65vh;object-fit:contain;margin:0 auto 8px;}
+/* Xのタイムラインのように、一覧に並ぶカードでも正方形に切り詰めず縦横比を
+   保ったまま表示する（幅は容器に収め、縦長写真が並びを占領しすぎないよう
+   緩めの上限だけ設ける）。詳細モーダル（.journal-card-detail）はさらに
+   1枚をじっくり見せる場面なので、上限だけをもっと緩くする。 */
+.journal-card img{width:auto;height:auto;max-width:100%;max-height:360px;object-fit:contain;border-radius:3px;margin:0 auto 8px;display:block;}
+.journal-card-detail img{max-height:65vh;}
 .journal-card .jc-place{font-weight:600;font-size:.9rem;color:var(--ink);margin-bottom:3px;}
 .journal-card .jc-comment{font-size:.88rem;line-height:1.6;margin:0 0 6px;white-space:pre-wrap;}
 .journal-card .jc-meta{font-size:.74rem;color:var(--slate);}
