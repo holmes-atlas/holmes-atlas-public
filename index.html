@@ -3636,10 +3636,29 @@ function makeSpecialIcon(){
     html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="21" y2="21"/></svg>',
     iconSize:[36,36], iconAnchor:[18,18]});
 }
-function makeJournalIcon(){
+// offset: {dx,dy}を渡すと、実際の座標はそのままに、見た目の表示位置だけを
+// そのぶんずらす（当たり判定＝クリック領域も見た目の位置についてくる）。
+// 同じ座標に複数のピンが重なってしまう場合（紐付いた地点ピンと、あるいは
+// 訪問記録同士）に、少しずつ位置をずらして両方・全部をタップできるようにする。
+function makeJournalIcon(offset){
+  const dx = offset ? offset.dx : 0;
+  const dy = offset ? offset.dy : 0;
   return L.divIcon({className:'leaflet-journal-icon',
     html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>',
-    iconSize:[24,24], iconAnchor:[12,12]});
+    iconSize:[24,24], iconAnchor:[12-dx, 12-dy]});
+}
+// slot=0は「ずらさない」（＝紐付いた地点ピン自身、または重複のない単独の
+// 訪問記録ピンの位置）。slot>=1のピンを、中心の周りに少しずつ広がる輪の上に
+// 並べていく。1つの輪に収まらない件数になったら、外側にもう一段大きな輪を作る。
+function journalMarkerOffset(slot){
+  if(slot <= 0) return null;
+  const ringSize = 8, baseRadius = 10, ringGap = 14;
+  const idx = slot - 1;
+  const ring = Math.floor(idx / ringSize);
+  const pos = idx % ringSize;
+  const radius = baseRadius + ring * ringGap;
+  const angle = (pos * (360 / ringSize) + 45 + ring * 20) * Math.PI / 180;
+  return {dx: Math.round(Math.cos(angle) * radius), dy: Math.round(Math.sin(angle) * radius)};
 }
 let markers = {};
 let coreOnlyFilter = false;
@@ -3957,12 +3976,32 @@ function renderJournalMarkers(){
   // renderMarkers()と同じ理由で、1件ずつaddLayerせず配列にまとめてから
   // addLayers()を1回だけ呼ぶ。訪問記録は件数の上限を設けていないため、
   // 将来的にまとまった件数になったときの体感速度への影響が大きい。
+  //
+  // 同じ地点に複数の訪問記録がつくと、座標がすべて同じになって重なって
+  // しまう（さらに、登録済みの地点自身のピンとも重なる）。そのままだと
+  // 一番上に乗ったピンしかタップできないので、座標が一致するもの同士を
+  // グループ化し、少しずつ位置をずらして全部タップできるようにする。
+  const groups = new Map();
   journal.forEach(j=>{
     if(!j.coords) return;
-    const m = L.marker(j.coords, {icon: makeJournalIcon()});
-    m.on('click', ()=>{ if(mapPickModeActive) return; openJournalDetail(j.id); });
-    m.bindTooltip(escapeHtml(j.placeName), {direction:'top', offset:[0,-8]});
-    journalMarkers.push(m);
+    const key = j.coords[0].toFixed(6)+','+j.coords[1].toFixed(6);
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(j);
+  });
+  groups.forEach(list=>{
+    // 投稿日時の古い順に並べておくことで、ずらし方が再描画のたびに
+    // ばらつかないようにする（新しい投稿ほど外側の輪に配置される）。
+    list.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+    // グループ内に登録済みの地点に紐付いている訪問記録がある場合は、
+    // slot 0（＝ずらさない位置）をその地点自身のピンのために空けておく。
+    const hasPlacePin = list.some(j=> j.entityId && DATA[j.entityId]?.type === 'place');
+    list.forEach((j, i)=>{
+      const slot = hasPlacePin ? i+1 : i;
+      const m = L.marker(j.coords, {icon: makeJournalIcon(journalMarkerOffset(slot))});
+      m.on('click', ()=>{ if(mapPickModeActive) return; openJournalDetail(j.id); });
+      m.bindTooltip(escapeHtml(j.placeName), {direction:'top', offset:[0,-8]});
+      journalMarkers.push(m);
+    });
   });
   journalMarkerClusterGroup.addLayers(journalMarkers);
 }
