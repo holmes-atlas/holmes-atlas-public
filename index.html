@@ -577,6 +577,10 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .field input[type=text],.field input[type=date],.field textarea,.field select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:3px;font-size:.9rem;background:#fff;}
 .field textarea{min-height:90px;resize:vertical;}
 .field .hint{font-size:.74rem;opacity:.6;margin-top:3px;}
+.disclosure-toggle{display:flex;align-items:center;gap:5px;background:none;border:none;color:var(--brass);font-size:.82rem;font-weight:600;cursor:pointer;padding:0;margin-bottom:4px;font-family:inherit;}
+.disclosure-toggle:hover{text-decoration:underline;}
+.disclosure-arrow{font-size:.7rem;display:inline-block;width:10px;}
+.disclosure-body{margin-top:6px;}
 .geo-row{display:flex;gap:6px;}
 .geo-row input{flex:1;}
 .geo-search-btn{background:var(--slate);border:none;color:#fff;padding:0 14px;border-radius:3px;cursor:pointer;font-size:.85rem;white-space:nowrap;}
@@ -4526,7 +4530,7 @@ const GUIDE_SECTIONS = [
   {
     title: '✏️ 項目の追加・編集',
     body: [
-      'ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、各ページの「編集する」から内容を修正できます。',
+      'ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、同じメニューの「既存の項目を編集」で名称を検索するか、各ページの「編集する」から内容を修正できます。',
       '一般の利用者による追加・編集は「提案」として送信され、審査担当者の確認後に反映されます。自分が出した提案の状況は、同じく「項目の追加・編集等」の中の「編集一覧」から確認できます。'
     ]
   },
@@ -4844,16 +4848,20 @@ function openEntityModal(prefill){
     }
   });
 }
-// 「項目の追加・編集等」。新規追加・編集一覧・データエクスポートの3つを
-// ヘッダーの1つのボタンにまとめ、開いたモーダルで選んでもらう。
+// 「項目の追加・編集等」。新規追加・既存編集・編集一覧・データエクスポートの
+// 4つをヘッダーの1つのボタンにまとめ、開いたモーダルで選んでもらう。
 function openEntityManageModal(){
   modalBody.innerHTML = `
     <h3>項目の追加・編集等</h3>
-    <div class="modal-sub">地名・人物・作品・用語の追加や、これまでの提案の確認、データのエクスポートができます。</div>
+    <div class="modal-sub">地名・人物・作品・用語の追加や編集、これまでの提案の確認、データのエクスポートができます。</div>
     <div class="menu-choice-list">
       <button type="button" class="menu-choice-btn" id="emm-add">
         <span class="menu-choice-label">＋ 新しい項目を追加</span>
         <span class="menu-choice-sub">地名・人物・作品・用語を新しく登録します</span>
+      </button>
+      <button type="button" class="menu-choice-btn" id="emm-edit">
+        <span class="menu-choice-label">既存の項目を編集</span>
+        <span class="menu-choice-sub">登録済みの地名・人物・作品・用語を選んで内容を修正します</span>
       </button>
       <button type="button" class="menu-choice-btn" id="emm-myedits">
         <span class="menu-choice-label">編集一覧<span class="my-edits-count-badge" id="myEditsCountBadgeInline"></span></span>
@@ -4873,6 +4881,10 @@ function openEntityManageModal(){
     if(!currentUser){ showToast('新しい項目の追加にはログインが必要です。'); return; }
     openEntityModal();
   });
+  document.getElementById('emm-edit').addEventListener('click', ()=>{
+    if(!currentUser){ showToast('項目の編集にはログインが必要です。'); return; }
+    openEditEntitySearchModal();
+  });
   document.getElementById('emm-myedits').addEventListener('click', ()=>{
     if(!currentUser){ showToast('編集一覧の閲覧にはログインが必要です。'); return; }
     openMyEditsModal();
@@ -4882,6 +4894,33 @@ function openEntityManageModal(){
   document.getElementById('emm-export').addEventListener('click', openExportModal);
 }
 document.getElementById('entityManageBtn').addEventListener('click', openEntityManageModal);
+
+// 「項目の追加・編集等」→「既存の項目を編集」用の検索モーダル。地点ページの
+// 「編集する」ボタンと違い、対象の項目ページを開かずに名称検索から直接
+// openEditModalへ入れるようにする（地点・人物・作品・用語の全種別が対象）。
+function openEditEntitySearchModal(){
+  modalBody.innerHTML = `
+    <h3>既存の項目を編集</h3>
+    <div class="modal-sub">編集したい地名・人物・作品・用語の名称を入力してください。</div>
+    <div class="field"><input type="text" id="ees-query" placeholder="名称で検索" autocomplete="off"></div>
+    <div class="map-search-results" id="ees-results"></div>
+    <div class="modal-actions"><button class="modal-cancel" id="ees-cancel">キャンセル</button></div>`;
+  overlay.classList.add('open');
+  const eesQuery = document.getElementById('ees-query');
+  const eesResults = document.getElementById('ees-results');
+  function renderEesResults(q){
+    const ids = q.trim() ? localMatches(q) : [];
+    if(!ids.length){ eesResults.classList.remove('show'); eesResults.innerHTML=''; return; }
+    eesResults.innerHTML = ids.map(id=>`<button type="button" class="map-search-item" data-ees-id="${id}"><span class="dot dot-${entityClass(DATA[id])}"></span>${escapeHtml(DATA[id].name)}<span class="msi-sub">${entityLabel(DATA[id])}</span></button>`).join('');
+    eesResults.classList.add('show');
+    eesResults.querySelectorAll('[data-ees-id]').forEach(btn=>{
+      btn.addEventListener('click', ()=>openEditModal(btn.dataset.eesId));
+    });
+  }
+  eesQuery.addEventListener('input', ()=>renderEesResults(eesQuery.value));
+  eesQuery.focus();
+  document.getElementById('ees-cancel').addEventListener('click', closeModal);
+}
 
 function openEditModal(targetId){
   const e = DATA[targetId];
@@ -5896,18 +5935,23 @@ function openJournalModal(prefill){
     <div class="field"><label>場所や項目の名称</label><input type="text" id="j-name" value="${prefill.name?escapeAttr(prefill.name):''}" ${prefill.entityId?'readonly':''}></div>
     ${!prefill.entityId ? `
     <div class="field">
-      <label>位置を検索する（任意）</label>
-      <div class="geo-row"><input type="text" id="j-geo-query" placeholder="地名で検索" autocomplete="off"><button type="button" class="geo-search-btn" id="j-geo-search">検索</button></div>
-      <div class="map-search-results" id="j-geo-results"></div>
-      <button type="button" class="geo-search-btn geo-map-pick-btn" id="j-geo-map-pick">🗺 地図で指定する</button>
-      <div class="hint" id="j-geo-picked" style="display:${coords?'block':'none'};">${coords?`座標を設定しました（${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}）`:''}</div>
+      <button type="button" class="disclosure-toggle" id="j-geo-toggle" aria-expanded="${coords?'true':'false'}"><span class="disclosure-arrow">${coords?'▾':'▸'}</span>📍 位置を指定する（任意）</button>
+      <div class="disclosure-body" id="j-geo-body" style="display:${coords?'block':'none'};">
+        <div class="geo-row"><input type="text" id="j-geo-query" placeholder="地名で検索" autocomplete="off"><button type="button" class="geo-search-btn" id="j-geo-search">検索</button></div>
+        <div class="map-search-results" id="j-geo-results"></div>
+        <button type="button" class="geo-search-btn geo-map-pick-btn" id="j-geo-map-pick">🗺 地図で指定する</button>
+        <div class="hint" id="j-geo-picked" style="display:${coords?'block':'none'};">${coords?`座標を設定しました（${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}）`:''}</div>
+      </div>
     </div>` : ''}
     <div class="field"><label>${isPlaceKind ? '訪問日（任意）' : '日付（任意）'}</label><input type="date" id="j-date"></div>
     <div class="field"><label>コメント</label><textarea id="j-comment" placeholder="感想や発見したことなど"></textarea></div>
     <div class="field"><label>写真（任意）</label>
       <input type="file" class="file-input" id="j-image-file" accept="image/*">
-      <input type="text" id="j-image" placeholder="https://..." style="margin-top:6px;">
       <div class="image-preview" id="j-image-preview"></div>
+      <button type="button" class="link-btn" id="j-image-url-toggle" style="display:block;margin-top:6px;">URLで指定する場合はこちら</button>
+      <div class="disclosure-body" id="j-image-url-body" style="display:none;margin-top:6px;">
+        <input type="text" id="j-image" placeholder="https://...">
+      </div>
     </div>
     <div class="field">
       <label>公開範囲</label>
@@ -5920,6 +5964,23 @@ function openJournalModal(prefill){
     <div class="modal-actions"><button class="modal-cancel" id="j-cancel">キャンセル</button><button class="modal-cancel" id="j-save-draft">一時保存</button><button class="modal-submit" id="j-submit">保存する</button></div>`;
   overlay.classList.add('open');
   wireImageUpload('j-image-file','j-image-preview', d=>uploadedImageData=d);
+  const jImageUrlToggleBtn = document.getElementById('j-image-url-toggle');
+  const jImageUrlBody = document.getElementById('j-image-url-body');
+  function expandImageUrlSection(){
+    jImageUrlBody.style.display = 'block';
+    jImageUrlToggleBtn.style.display = 'none';
+  }
+  jImageUrlToggleBtn.addEventListener('click', expandImageUrlSection);
+  const jGeoToggleBtn = document.getElementById('j-geo-toggle');
+  if(jGeoToggleBtn){
+    const jGeoBodyEl = document.getElementById('j-geo-body');
+    jGeoToggleBtn.addEventListener('click', ()=>{
+      const expanded = jGeoBodyEl.style.display !== 'none';
+      jGeoBodyEl.style.display = expanded ? 'none' : 'block';
+      jGeoToggleBtn.setAttribute('aria-expanded', String(!expanded));
+      jGeoToggleBtn.querySelector('.disclosure-arrow').textContent = expanded ? '▸' : '▾';
+    });
+  }
   let visibility = 'public';
   const journalDraftId = prefill.entityId || 'new';
   const journalDraftFields = ['j-name','j-date','j-comment','j-image'];
@@ -5942,6 +6003,7 @@ function openJournalModal(prefill){
   if(journalDraft){
     applyDraftFields(journalDraft.data, journalDraftFields);
     if(journalDraft.data.visibility) setVisibility(journalDraft.data.visibility);
+    if(journalDraft.data['j-image']) expandImageUrlSection();
   }
   wireDraftAutosave('journal', journalDraftId, journalDraftFields, ()=>({visibility}));
   if(!prefill.entityId){
