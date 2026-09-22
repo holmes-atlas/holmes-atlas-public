@@ -581,6 +581,25 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .disclosure-toggle:hover{text-decoration:underline;}
 .disclosure-arrow{font-size:.7rem;display:inline-block;width:10px;}
 .disclosure-body{margin-top:6px;}
+/* ネイティブのinput[type=date]はモバイルだと一度日付を選ぶと戻す手段（×）が
+   見当たらないことが多いため、専用のクリアボタンを横に添えている。 */
+.date-clear-row{display:flex;gap:6px;align-items:stretch;}
+.date-clear-row input[type=date]{flex:1;min-width:0;}
+.date-clear-btn{flex:none;width:38px;background:#fff;border:1px solid var(--line);border-radius:3px;color:var(--slate);font-size:1.1rem;line-height:1;cursor:pointer;}
+.date-clear-btn:hover{border-color:var(--brass);color:var(--brass);}
+/* 「既存の項目を編集」モーダル専用の、索引欄に似た種別別の折りたたみ一覧。
+   索引欄本体の.index-group系は暗いサイドバー向けの配色（明るい文字色）の
+   ため、明るいモーダル背景では読めなくなる。同じ構造を、モーダルに合わせた
+   明るい配色で作り直したもの。 */
+.ees-browse-list{border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-top:2px;max-height:340px;overflow-y:auto;background:#fff;}
+.ees-group-header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:var(--parchment-2);border:none;border-bottom:1px solid var(--line);font-weight:600;font-size:.78rem;color:var(--slate);padding:8px 12px;cursor:pointer;font-family:inherit;}
+.ees-group-header:hover{background:#e6d9b8;}
+.ees-arrow{font-size:.7rem;display:inline-block;width:10px;color:var(--brass);}
+.ees-count{margin-left:auto;font-size:.7rem;opacity:.6;font-weight:400;}
+.ees-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--charcoal);font-size:.86rem;padding:7px 12px;cursor:pointer;font-family:inherit;}
+.ees-item:last-child{border-bottom:none;}
+.ees-item:hover{background:rgba(171,131,71,.12);}
+.ees-empty{padding:14px 12px;font-size:.82rem;color:var(--slate);font-style:italic;}
 .geo-row{display:flex;gap:6px;}
 .geo-row input{flex:1;}
 .geo-search-btn{background:var(--slate);border:none;color:#fff;padding:0 14px;border-radius:3px;cursor:pointer;font-size:.85rem;white-space:nowrap;}
@@ -4530,7 +4549,7 @@ const GUIDE_SECTIONS = [
   {
     title: '✏️ 項目の追加・編集',
     body: [
-      'ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、同じメニューの「既存の項目を編集」で名称を検索するか、各ページの「編集する」から内容を修正できます。',
+      'ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、同じメニューの「既存の項目を編集」で名称を絞り込むか、種別ごとの一覧から選んで内容を修正できます（各ページの「編集する」からでも同様に編集できます）。',
       '一般の利用者による追加・編集は「提案」として送信され、審査担当者の確認後に反映されます。自分が出した提案の状況は、同じく「項目の追加・編集等」の中の「編集一覧」から確認できます。'
     ]
   },
@@ -4895,29 +4914,65 @@ function openEntityManageModal(){
 }
 document.getElementById('entityManageBtn').addEventListener('click', openEntityManageModal);
 
-// 「項目の追加・編集等」→「既存の項目を編集」用の検索モーダル。地点ページの
-// 「編集する」ボタンと違い、対象の項目ページを開かずに名称検索から直接
-// openEditModalへ入れるようにする（地点・人物・作品・用語の全種別が対象）。
+// 「項目の追加・編集等」→「既存の項目を編集」用のモーダル。地点ページの
+// 「編集する」ボタンと違い、対象の項目ページを開かずに直接openEditModalへ
+// 入れるようにする（地点・人物・作品・用語の全種別が対象）。索引欄と同じ
+// 「種別ごとに折りたたまれた一覧から選ぶ」体験を、このモーダル単体でも
+// 使えるよう、renderIndex()のグループ分けロジックを簡略化して流用している
+// （お気に入り・関連サイト・言い換え辞書など索引欄独自の項目は対象外）。
 function openEditEntitySearchModal(){
   modalBody.innerHTML = `
     <h3>既存の項目を編集</h3>
-    <div class="modal-sub">編集したい地名・人物・作品・用語の名称を入力してください。</div>
-    <div class="field"><input type="text" id="ees-query" placeholder="名称で検索" autocomplete="off"></div>
-    <div class="map-search-results" id="ees-results"></div>
+    <div class="modal-sub">編集したい地名・人物・作品・用語を、名称で絞り込むか、下の一覧から選んでください。</div>
+    <div class="field"><input type="text" id="ees-query" placeholder="名称で絞り込み" autocomplete="off"></div>
+    <div class="ees-browse-list" id="ees-browse"></div>
     <div class="modal-actions"><button class="modal-cancel" id="ees-cancel">キャンセル</button></div>`;
   overlay.classList.add('open');
   const eesQuery = document.getElementById('ees-query');
-  const eesResults = document.getElementById('ees-results');
-  function renderEesResults(q){
-    const ids = q.trim() ? localMatches(q) : [];
-    if(!ids.length){ eesResults.classList.remove('show'); eesResults.innerHTML=''; return; }
-    eesResults.innerHTML = ids.map(id=>`<button type="button" class="map-search-item" data-ees-id="${id}"><span class="dot dot-${entityClass(DATA[id])}"></span>${escapeHtml(DATA[id].name)}<span class="msi-sub">${entityLabel(DATA[id])}</span></button>`).join('');
-    eesResults.classList.add('show');
-    eesResults.querySelectorAll('[data-ees-id]').forEach(btn=>{
-      btn.addEventListener('click', ()=>openEditModal(btn.dataset.eesId));
+  const eesBrowse = document.getElementById('ees-browse');
+  const eesLabels = {place:'地名', person:'人物', work:'作品（正典）', 'work-pastiche':'作品（正典外）', term:'用語'};
+  const eesOpenGroups = new Set(); // このモーダルを開いている間だけ保持する開閉状態
+  function renderEesBrowse(rawQuery){
+    const q = rawQuery.trim();
+    const groups = {place:[], person:[], work:[], 'work-pastiche':[], term:[]};
+    Object.keys(DATA).forEach(id=>{
+      const e = DATA[id];
+      if(q && !fuzzyMatch(e.name, q)) return;
+      if(e.type==='work'){ (e.canon ? groups.work : groups['work-pastiche']).push(id); }
+      else groups[e.type].push(id);
+    });
+    Object.values(groups).forEach(arr=>arr.sort((a,b)=>DATA[a].name.localeCompare(DATA[b].name,'ja')));
+    const totalMatches = Object.values(groups).reduce((a,arr)=>a+arr.length, 0);
+    let html = '';
+    if(q && totalMatches===0){
+      html = `<div class="ees-empty">「${escapeHtml(q)}」に一致する項目が見つかりませんでした。</div>`;
+    } else {
+      ['place','person','work','work-pastiche','term'].forEach(t=>{
+        if(groups[t].length===0) return;
+        const open = q ? true : eesOpenGroups.has(t);
+        html += `<div class="ees-group">
+          <button type="button" class="ees-group-header" data-eesg="${t}" aria-expanded="${open?'true':'false'}"><span class="ees-arrow">${open?'▾':'▸'}</span>${eesLabels[t]}<span class="ees-count">${groups[t].length}</span></button>
+          <div class="ees-group-items" style="display:${open?'block':'none'}">`;
+        groups[t].forEach(id=>{
+          html += `<button type="button" class="ees-item" data-eesid="${id}">${escapeHtml(DATA[id].name)}</button>`;
+        });
+        html += `</div></div>`;
+      });
+    }
+    eesBrowse.innerHTML = html;
+    eesBrowse.querySelectorAll('[data-eesg]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const g = btn.dataset.eesg;
+        if(eesOpenGroups.has(g)) eesOpenGroups.delete(g); else eesOpenGroups.add(g);
+        renderEesBrowse(eesQuery.value);
+      });
+    });
+    eesBrowse.querySelectorAll('[data-eesid]').forEach(btn=>{
+      btn.addEventListener('click', ()=>openEditModal(btn.dataset.eesid));
     });
   }
-  eesQuery.addEventListener('input', ()=>renderEesResults(eesQuery.value));
+  eesQuery.addEventListener('input', ()=>renderEesBrowse(eesQuery.value));
+  renderEesBrowse('');
   eesQuery.focus();
   document.getElementById('ees-cancel').addEventListener('click', closeModal);
 }
@@ -5943,7 +5998,12 @@ function openJournalModal(prefill){
         <div class="hint" id="j-geo-picked" style="display:${coords?'block':'none'};">${coords?`座標を設定しました（${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}）`:''}</div>
       </div>
     </div>` : ''}
-    <div class="field"><label>${isPlaceKind ? '訪問日（任意）' : '日付（任意）'}</label><input type="date" id="j-date"></div>
+    <div class="field"><label>${isPlaceKind ? '訪問日（任意）' : '日付（任意）'}</label>
+      <div class="date-clear-row">
+        <input type="date" id="j-date">
+        <button type="button" class="date-clear-btn" id="j-date-clear" title="日付をクリア" aria-label="日付をクリア">×</button>
+      </div>
+    </div>
     <div class="field"><label>コメント</label><textarea id="j-comment" placeholder="感想や発見したことなど"></textarea></div>
     <div class="field"><label>写真（任意）</label>
       <input type="file" class="file-input" id="j-image-file" accept="image/*">
@@ -6097,6 +6157,11 @@ function openJournalModal(prefill){
       });
     });
   }
+  document.getElementById('j-date-clear').addEventListener('click', ()=>{
+    const dateEl = document.getElementById('j-date');
+    dateEl.value = '';
+    dateEl.dispatchEvent(new Event('input', {bubbles:true})); // 一時保存の自動保存にも空欄を反映させる
+  });
   document.getElementById('j-cancel').addEventListener('click', closeModal);
   document.getElementById('j-save-draft').addEventListener('click', ()=>{
     const data = {visibility};
