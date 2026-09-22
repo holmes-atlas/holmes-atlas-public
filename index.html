@@ -4487,7 +4487,19 @@ function goToMap(id){
 // ---------- モーダル：新規項目 / 編集 ----------
 const overlay = document.getElementById('modalOverlay');
 const modalBody = document.getElementById('modalBody');
+// 「既存の項目を編集」の一覧から項目を選んで編集モーダルに入った場合など、
+// ✕やキャンセルで完全に閉じるのではなく「ひとつ前のモーダルに戻りたい」場面用の
+// フック。openXXXModal側でこの変数に関数をセットしておくと、✕ボタン・
+// オーバーレイの外側タップ・そのモーダル自身の「キャンセル」がその関数を
+// 呼ぶようになる（呼んだら必ずnullに戻す一度きりの予約）。closeModal()自体も
+// 必ずクリアするので、他のモーダルへ意図せず引き継がれることはない。
+let modalBackAction = null;
+function modalGoBack(){
+  if(modalBackAction){ const fn = modalBackAction; modalBackAction = null; fn(); }
+  else { closeModal(); }
+}
 function closeModal(){
+  modalBackAction = null;
   if(activeMapPickCleanup) activeMapPickCleanup(); // ピン設置モードの途中でモーダルが閉じられても、地図の状態を必ず元に戻す
   overlay.classList.remove('open'); modalBody.innerHTML='';
   if(journalUrlActive){
@@ -4616,14 +4628,14 @@ function openLegalModal(){
   overlay.classList.add('open');
   document.getElementById('legal-close').addEventListener('click', closeModal);
 }
-overlay.addEventListener('click', ev=>{ if(ev.target===overlay) closeModal(); });
+overlay.addEventListener('click', ev=>{ if(ev.target===overlay) modalGoBack(); });
 // ✕ボタンは.modal-shellの静的マークアップ（HTML側）に1つだけ存在し、個々の
 // モーダルのinnerHTML差し替えでは消えないので、配線もここで一度だけ行えばよい。
 const modalCloseXBtn = document.getElementById('modalCloseX');
 if(modalCloseXBtn){
   modalCloseXBtn.addEventListener('click', (ev)=>{
     ev.stopPropagation();
-    closeModal();
+    modalGoBack();
   });
 }
 // ---------- モーダルのキーボード操作・フォーカス管理 ----------
@@ -4655,7 +4667,7 @@ new MutationObserver(()=>{
 document.addEventListener('keydown', (ev)=>{
   if(!overlay.classList.contains('open')) return;
   if(ev.key === 'Escape'){
-    closeModal();
+    modalGoBack();
     return;
   }
   if(ev.key === 'Tab'){
@@ -4920,18 +4932,23 @@ document.getElementById('entityManageBtn').addEventListener('click', openEntityM
 // 「種別ごとに折りたたまれた一覧から選ぶ」体験を、このモーダル単体でも
 // 使えるよう、renderIndex()のグループ分けロジックを簡略化して流用している
 // （お気に入り・関連サイト・言い換え辞書など索引欄独自の項目は対象外）。
+// eesOpenGroups/eesLastQueryはこのモーダルの外（関数の外）に置き、indexOpenGroups
+// と同様にページを開いている間は保持する。編集モーダルの✕やキャンセルで
+// ここへ戻ってきた時（modalBackAction経由）に、絞り込み前と同じ状態
+// （開いていたグループ・入力していた検索語）へ復元できるようにするため。
+const eesLabels = {place:'地名', person:'人物', work:'作品（正典）', 'work-pastiche':'作品（正典外）', term:'用語'};
+let eesOpenGroups = new Set();
+let eesLastQuery = '';
 function openEditEntitySearchModal(){
   modalBody.innerHTML = `
     <h3>既存の項目を編集</h3>
     <div class="modal-sub">編集したい地名・人物・作品・用語を、名称で絞り込むか、下の一覧から選んでください。</div>
-    <div class="field"><input type="text" id="ees-query" placeholder="名称で絞り込み" autocomplete="off"></div>
+    <div class="field"><input type="text" id="ees-query" placeholder="名称で絞り込み" autocomplete="off" value="${escapeAttr(eesLastQuery)}"></div>
     <div class="ees-browse-list" id="ees-browse"></div>
     <div class="modal-actions"><button class="modal-cancel" id="ees-cancel">キャンセル</button></div>`;
   overlay.classList.add('open');
   const eesQuery = document.getElementById('ees-query');
   const eesBrowse = document.getElementById('ees-browse');
-  const eesLabels = {place:'地名', person:'人物', work:'作品（正典）', 'work-pastiche':'作品（正典外）', term:'用語'};
-  const eesOpenGroups = new Set(); // このモーダルを開いている間だけ保持する開閉状態
   function renderEesBrowse(rawQuery){
     const q = rawQuery.trim();
     const groups = {place:[], person:[], work:[], 'work-pastiche':[], term:[]};
@@ -4968,16 +4985,17 @@ function openEditEntitySearchModal(){
       });
     });
     eesBrowse.querySelectorAll('[data-eesid]').forEach(btn=>{
-      btn.addEventListener('click', ()=>openEditModal(btn.dataset.eesid));
+      btn.addEventListener('click', ()=>openEditModal(btn.dataset.eesid, {onBack: openEditEntitySearchModal}));
     });
   }
-  eesQuery.addEventListener('input', ()=>renderEesBrowse(eesQuery.value));
-  renderEesBrowse('');
+  eesQuery.addEventListener('input', ()=>{ eesLastQuery = eesQuery.value; renderEesBrowse(eesLastQuery); });
+  renderEesBrowse(eesLastQuery);
   eesQuery.focus();
   document.getElementById('ees-cancel').addEventListener('click', closeModal);
 }
 
-function openEditModal(targetId){
+function openEditModal(targetId, opts){
+  modalBackAction = (opts && opts.onBack) || null; // 「既存の項目を編集」の一覧から来た場合はそこへ戻れるようにする
   const e = DATA[targetId];
   let uploadedImageData = null;
   modalBody.innerHTML = `
@@ -5025,7 +5043,7 @@ function openEditModal(targetId){
     wireGeoSearchButton(false);
     wireMapPickButton();
   }
-  document.getElementById('f-cancel').addEventListener('click', closeModal);
+  document.getElementById('f-cancel').addEventListener('click', modalGoBack);
   document.getElementById('f-delete-open')?.addEventListener('click', ()=>openDeleteConfirmModal(targetId, e.name));
   // ★通常はwireDraftAutosave（入力のたびに自動で裏で保存）が動いているが、
   // 「ちゃんと保存されているか不安」という声に応えて、明示的に今すぐ保存したことが
