@@ -496,6 +496,8 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .journal-card .jc-meta{font-size:.74rem;color:var(--slate);}
 .journal-card .jc-actions{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;}
 .jc-delete-btn{background:none;border:1px solid var(--burgundy);color:var(--burgundy);padding:3px 10px;border-radius:3px;font-size:.72rem;cursor:pointer;}
+.jc-edit-btn{background:none;border:1px solid var(--brass);color:var(--brass);padding:3px 10px;border-radius:3px;font-size:.72rem;cursor:pointer;font-family:inherit;}
+.jc-edit-btn:hover{background:rgba(171,131,71,.1);}
 .jc-like-btn,.jc-reply-toggle-btn,.jc-report-btn,.jc-share-btn{background:none;border:1px solid var(--line);color:var(--slate);padding:3px 10px;border-radius:3px;font-size:.72rem;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;}
 .jc-like-btn.liked{border-color:var(--burgundy);color:var(--burgundy);}
 .jc-report-btn:hover{border-color:var(--burgundy);color:var(--burgundy);}
@@ -4553,9 +4555,10 @@ const GUIDE_SECTIONS = [
   {
     title: '📔 訪問記録とマイ巡礼手帳',
     body: [
-      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「訪問記録・コメントの投稿」、または各地点ページから追加できます。',
+      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「訪問記録・コメントの投稿」、または各地点ページから追加できます。ヘッダーから投稿する場合、位置検索の候補一覧に出てくる「アトラス内の地名」を選ぶと、その地点ページの訪問記録・コメント欄にも表示されるようになります。',
       '「📔 マイ巡礼手帳」（ログイン後にヘッダーへ表示）では、自分の訪問記録と、正典に登場する地点のうちどれだけ巡ったかという踏破状況がまとめて見られます。',
-      '「タイムライン」では、自分に限らずサイト利用者全体の訪問記録が新着順に並びます。'
+      '「タイムライン」では、自分に限らずサイト利用者全体の訪問記録が新着順に並びます。',
+      '自分が投稿した訪問記録・コメントは、投稿の右下にある「編集」から内容を書き直せます（タイムライン・マイ巡礼手帳・各項目ページのどこからでも操作できます）。'
     ]
   },
   {
@@ -5972,6 +5975,7 @@ function renderJournalCard(j, opts={}){
   const liked = !isPrivate && currentUser && (j.likedBy||[]).includes(currentUser.id);
   const likeCount = isPrivate ? 0 : (j.likedBy||[]).length;
   const canDelete = currentUser && (currentUser.id === j.authorId || (!isPrivate && isReviewer()));
+  const canEdit = currentUser && currentUser.id === j.authorId; // 編集は投稿者本人のみ（削除と違い、レビュー担当者でも他人の文面は書き換えない）
   const replies = isPrivate ? [] : (j.replies || []);
   const actionsHtml = isPrivate ? '' : `
         <button class="jc-like-btn ${liked?'liked':''}" data-like-journal="${j.id}">${liked?'♥':'♡'} ${likeCount>0?likeCount:''}</button>
@@ -5985,6 +5989,7 @@ function renderJournalCard(j, opts={}){
       <p class="jc-comment">${escapeHtml(j.comment)}</p>
       <div class="jc-meta">${(!isPrivate && j.authorName) ? escapeHtml(j.authorName)+' ・ ' : ''}${j.visitedDate?('訪問日: '+escapeHtml(j.visitedDate)+' ・ '):''}${fmtDate(j.createdAt)}</div>
       <div class="jc-actions">${actionsHtml}
+        ${canEdit ? `<button class="jc-edit-btn" data-edit-journal="${j.id}">編集</button>` : ''}
         ${canDelete ? `<button class="jc-delete-btn" data-del-journal="${j.id}">削除</button>` : ''}
       </div>
       ${isPrivate ? '' : `<div class="jc-replies" id="replies-${j.id}" style="display:none;">
@@ -5999,12 +6004,36 @@ function renderJournalCard(j, opts={}){
 
 function openJournalModal(prefill){
   prefill = prefill || {};
+  // 編集モード：タイムライン／マイ巡礼手帳／項目ページの「編集」から呼ばれた
+  // 場合、prefill.editJournalIdだけが渡ってくる。投稿済みの内容から初期値を
+  // 組み立て、以降は通常の投稿フォームとほぼ同じ経路で扱う（呼び出し側から
+  // 渡されるentityId/name/lat/lngは編集時には使わない）。
+  const editId = prefill.editJournalId || null;
+  let editRecord = null;
+  if(editId){
+    editRecord = journal.find(x=>x.id===editId) || privateNotes.find(x=>x.id===editId);
+    if(!editRecord){ showToast('この投稿は見つかりませんでした（削除された可能性があります）。'); return; }
+    if(!currentUser || currentUser.id !== editRecord.authorId){ showToast('この投稿を編集する権限がありません。'); return; }
+    prefill = {
+      entityId: editRecord.entityId || null,
+      name: editRecord.placeName,
+      lat: editRecord.coords ? editRecord.coords[0] : null,
+      lng: editRecord.coords ? editRecord.coords[1] : null
+    };
+  }
   const isPlaceKind = !prefill.entityId || DATA[prefill.entityId]?.type === 'place';
   let coords = (typeof prefill.lat==='number') ? [prefill.lat, prefill.lng] : null;
   let uploadedImageData = null;
+  // ヘッダーの「訪問記録・コメントの投稿」など、特定の項目ページを経由しない
+  // 投稿でも、位置検索で「アトラス内の地名」から選んだ場合はその項目に
+  // 紐付け、当該項目ページの「訪問記録・コメント」欄にも表示されるようにする。
+  // 外部の候補地を選んだ場合や、選んだ後に名称欄を手で書き換えた場合は
+  // 紐付けを外す（実際とは違う項目に記録が付いてしまうのを防ぐため）。
+  let matchedEntityId = prefill.entityId || null;
+  const initialVisibility = editRecord && editRecord.visibility === 'private' ? 'private' : 'public';
   modalBody.innerHTML = `
-    <h3>${isPlaceKind ? '訪問記録・コメントを追加' : '感想を投稿'}</h3>
-    <div class="modal-sub">${isPlaceKind ? 'その場で保存されます。' : '訪れたことがなくても、読んだ感想や気づいたことを投稿できます。'}</div>
+    <h3>${editId ? (isPlaceKind ? '訪問記録・コメントを編集' : '感想を編集') : (isPlaceKind ? '訪問記録・コメントを追加' : '感想を投稿')}</h3>
+    <div class="modal-sub">${editId ? '保存すると内容が更新されます。' : (isPlaceKind ? 'その場で保存されます。' : '訪れたことがなくても、読んだ感想や気づいたことを投稿できます。')}</div>
     <div class="field"><label>場所や項目の名称</label><input type="text" id="j-name" value="${prefill.name?escapeAttr(prefill.name):''}" ${prefill.entityId?'readonly':''}></div>
     ${!prefill.entityId ? `
     <div class="field">
@@ -6018,30 +6047,38 @@ function openJournalModal(prefill){
     </div>` : ''}
     <div class="field"><label>${isPlaceKind ? '訪問日（任意）' : '日付（任意）'}</label>
       <div class="date-clear-row">
-        <input type="date" id="j-date">
+        <input type="date" id="j-date" value="${editRecord && editRecord.visitedDate ? escapeAttr(editRecord.visitedDate) : ''}">
         <button type="button" class="date-clear-btn" id="j-date-clear" title="日付をクリア" aria-label="日付をクリア">×</button>
       </div>
     </div>
-    <div class="field"><label>コメント</label><textarea id="j-comment" placeholder="感想や発見したことなど"></textarea></div>
+    <div class="field"><label>コメント</label><textarea id="j-comment" placeholder="感想や発見したことなど">${editRecord ? escapeHtml(editRecord.comment||'') : ''}</textarea></div>
     <div class="field"><label>写真（任意）</label>
       <input type="file" class="file-input" id="j-image-file" accept="image/*">
-      <div class="image-preview" id="j-image-preview"></div>
-      <button type="button" class="link-btn" id="j-image-url-toggle" style="display:block;margin-top:6px;">URLで指定する場合はこちら</button>
-      <div class="disclosure-body" id="j-image-url-body" style="display:none;margin-top:6px;">
-        <input type="text" id="j-image" placeholder="https://...">
+      <div class="image-preview" id="j-image-preview">${editRecord && editRecord.image ? `<img src="${escapeAttr(editRecord.image)}" alt="">` : ''}</div>
+      ${editRecord && editRecord.image ? `<button type="button" class="link-btn" id="j-image-clear" style="display:block;margin-top:4px;">写真を削除</button>` : ''}
+      <button type="button" class="link-btn" id="j-image-url-toggle" style="display:${editRecord && editRecord.image ? 'none':'block'};margin-top:6px;">URLで指定する場合はこちら</button>
+      <div class="disclosure-body" id="j-image-url-body" style="display:${editRecord && editRecord.image ? 'block':'none'};margin-top:6px;">
+        <input type="text" id="j-image" placeholder="https://..." value="${editRecord && editRecord.image ? escapeAttr(editRecord.image) : ''}">
       </div>
     </div>
     <div class="field">
       <label>公開範囲</label>
       <div class="visibility-toggle">
-        <button type="button" class="vis-btn active" data-vis="public">🔓 みんなに公開</button>
-        <button type="button" class="vis-btn" data-vis="private">🔒 自分だけ</button>
+        <button type="button" class="vis-btn ${initialVisibility==='public'?'active':''}" data-vis="public">🔓 みんなに公開</button>
+        <button type="button" class="vis-btn ${initialVisibility==='private'?'active':''}" data-vis="private">🔒 自分だけ</button>
       </div>
       <div class="hint">${isPlaceKind ? '「自分だけ」を選ぶと他の会員には見えない個人的な記録になります（いいね・返信はできません）。' : '「自分だけ」を選ぶと他の会員には見えない個人的なメモになります。'}</div>
     </div>
-    <div class="modal-actions"><button class="modal-cancel" id="j-cancel">キャンセル</button><button class="modal-cancel" id="j-save-draft">一時保存</button><button class="modal-submit" id="j-submit">保存する</button></div>`;
+    <div class="modal-actions"><button class="modal-cancel" id="j-cancel">キャンセル</button>${editId ? '' : '<button class="modal-cancel" id="j-save-draft">一時保存</button>'}<button class="modal-submit" id="j-submit">${editId?'更新する':'保存する'}</button></div>`;
   overlay.classList.add('open');
   wireImageUpload('j-image-file','j-image-preview', d=>uploadedImageData=d);
+  document.getElementById('j-image-clear')?.addEventListener('click', ()=>{
+    uploadedImageData = null;
+    document.getElementById('j-image-preview').innerHTML = '';
+    const urlInput = document.getElementById('j-image');
+    if(urlInput) urlInput.value = '';
+    document.getElementById('j-image-clear').remove();
+  });
   const jImageUrlToggleBtn = document.getElementById('j-image-url-toggle');
   const jImageUrlBody = document.getElementById('j-image-url-body');
   function expandImageUrlSection(){
@@ -6059,7 +6096,7 @@ function openJournalModal(prefill){
       jGeoToggleBtn.querySelector('.disclosure-arrow').textContent = expanded ? '▸' : '▾';
     });
   }
-  let visibility = 'public';
+  let visibility = initialVisibility;
   const journalDraftId = prefill.entityId || 'new';
   const journalDraftFields = ['j-name','j-date','j-comment','j-image'];
   function setVisibility(v){
@@ -6069,36 +6106,46 @@ function openJournalModal(prefill){
   modalBody.querySelectorAll('.vis-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       setVisibility(btn.dataset.vis);
+      if(editId) return; // 編集時は一時保存の仕組みを使わない（下記の分岐を参照）
       saveDraft('journal', journalDraftId, Object.assign(
         journalDraftFields.reduce((acc,fid)=>{ const el=document.getElementById(fid); if(el) acc[fid]=el.value; return acc; }, {}),
         {visibility}
       ));
     });
   });
-  // ★編集画面（openEditModal）と同様、「復元する／破棄する」のバナーは廃止し、
-  // 一時保存の内容があればバナーなしでそのままフォームに反映する形に単純化した。
-  const journalDraft = loadDraft('journal', journalDraftId);
-  if(journalDraft){
-    applyDraftFields(journalDraft.data, journalDraftFields);
-    if(journalDraft.data.visibility) setVisibility(journalDraft.data.visibility);
-    if(journalDraft.data['j-image']) expandImageUrlSection();
+  // 編集モードでは、投稿済みの内容そのものが初期値になっているため、
+  // 「新規投稿の一時保存」の仕組み（下書きの復元・自動保存・一時保存ボタン）は
+  // 使わない。新規投稿用の下書きキー（journalDraftId）と衝突させないためでもある。
+  if(!editId){
+    // ★編集画面（openEditModal）と同様、「復元する／破棄する」のバナーは廃止し、
+    // 一時保存の内容があればバナーなしでそのままフォームに反映する形に単純化した。
+    const journalDraft = loadDraft('journal', journalDraftId);
+    if(journalDraft){
+      applyDraftFields(journalDraft.data, journalDraftFields);
+      if(journalDraft.data.visibility) setVisibility(journalDraft.data.visibility);
+      if(journalDraft.data['j-image']) expandImageUrlSection();
+    }
+    wireDraftAutosave('journal', journalDraftId, journalDraftFields, ()=>({visibility}));
   }
-  wireDraftAutosave('journal', journalDraftId, journalDraftFields, ()=>({visibility}));
   if(!prefill.entityId){
+    // 位置検索で登録済みの項目に紐付けた後、名称欄を手で書き換えた場合は
+    // 紐付けを外す（表示上の名前と紐付け先の項目がずれたまま投稿されるのを防ぐ）。
+    document.getElementById('j-name').addEventListener('input', ()=>{ matchedEntityId = null; });
     // 地図上の検索ボックス（mapSearchInput）と同じ体験にする：入力するそばから
     // 「アトラス内の登録済み地名」と「外部ジオコーディングの候補地」を両方
     // 予測表示する。ただし選択時の挙動はmapSearchInputと違い、地図を動かしたり
     // 詳細ページを開いたりはせず、coords（と空欄ならj-name）を設定するだけ。
     const jGeoQuery = document.getElementById('j-geo-query');
     const jGeoResults = document.getElementById('j-geo-results');
-    function applyJournalLocation(coordsPair, name){
+    function applyJournalLocation(coordsPair, name, entityId){
       coords = coordsPair;
+      matchedEntityId = entityId || null;
       const nameEl = document.getElementById('j-name');
       if(!nameEl.value.trim() && name) nameEl.value = name;
       const pickedEl = document.getElementById('j-geo-picked');
       if(pickedEl){ pickedEl.style.display='none'; pickedEl.textContent=''; } // 地図クリック由来の表示は検索確定でクリア
       jGeoResults.classList.remove('show');
-      showToast('位置情報を設定しました。');
+      showToast(entityId ? 'アトラス内の項目に紐付けました。' : '位置情報を設定しました。');
     }
     function renderJournalGeoResults(localIds, externalResults){
       let html = '';
@@ -6122,7 +6169,7 @@ function openJournalModal(prefill){
       jGeoResults.querySelectorAll('[data-jgeo-local]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const e = DATA[btn.dataset.jgeoLocal];
-          applyJournalLocation(e.coords, e.name);
+          applyJournalLocation(e.coords, e.name, btn.dataset.jgeoLocal);
         });
       });
       if(externalResults){
@@ -6166,6 +6213,7 @@ function openJournalModal(prefill){
     document.getElementById('j-geo-map-pick').addEventListener('click', ()=>{
       pickLocationOnMap(latlng=>{
         coords = [latlng.lat, latlng.lng];
+        matchedEntityId = null; // 地図上の任意の地点は登録済みの項目と紐付かない
         const pickedEl = document.getElementById('j-geo-picked');
         if(pickedEl){
           pickedEl.style.display = 'block';
@@ -6181,7 +6229,7 @@ function openJournalModal(prefill){
     dateEl.dispatchEvent(new Event('input', {bubbles:true})); // 一時保存の自動保存にも空欄を反映させる
   });
   document.getElementById('j-cancel').addEventListener('click', closeModal);
-  document.getElementById('j-save-draft').addEventListener('click', ()=>{
+  document.getElementById('j-save-draft')?.addEventListener('click', ()=>{
     const data = {visibility};
     journalDraftFields.forEach(fid=>{
       const el = document.getElementById(fid);
@@ -6195,14 +6243,57 @@ function openJournalModal(prefill){
     const name = document.getElementById('j-name').value.trim();
     const comment = document.getElementById('j-comment').value.trim();
     if(!name || !comment){ showToast('場所や項目の名称とコメントは必須です。'); return; }
+    const imageVal = uploadedImageData || document.getElementById('j-image').value.trim() || null;
+    if(editId){
+      if(currentUser.id !== editRecord.authorId){ showToast('この投稿を編集する権限がありません。'); return; }
+      const wasPrivate = editRecord.visibility === 'private';
+      const nowPrivate = visibility === 'private';
+      const patch = {
+        entityId: matchedEntityId,
+        placeName: name, coords,
+        visibility,
+        visitedDate: document.getElementById('j-date').value,
+        comment,
+        image: imageVal
+      };
+      if(wasPrivate === nowPrivate){
+        // 公開範囲が変わらない場合は、保存先の配列はそのままで部分更新すればよい。
+        Object.assign(editRecord, patch);
+        await rpcArrPatch(wasPrivate ? privateNotesKey() : 'p-journal', editId, patch);
+      } else {
+        // 公開⇔非公開の切り替えは保存先の配列自体が変わる（p-journalとp-notes:<uid>は
+        // 別の行のため）。元の配列から削除したうえで、新しい配列へ改めて追加する。
+        // 非公開化する場合はいいね・返信を持ち越さない（非公開記録では使わないため）。
+        const movedRecord = Object.assign({}, editRecord, patch,
+          nowPrivate ? {likedBy:[], replies:[]} : {likedBy: editRecord.likedBy||[], replies: editRecord.replies||[]});
+        if(wasPrivate){
+          privateNotes = privateNotes.filter(x=>x.id!==editId);
+          await rpcArrRemove(privateNotesKey(), editId);
+          journal.push(movedRecord);
+          await rpcArrAppendLimited('p-journal', movedRecord);
+        } else {
+          journal = journal.filter(x=>x.id!==editId);
+          await rpcArrRemove('p-journal', editId);
+          const isFirstEverNote = privateNotes.length === 0; // p-notes:<userId>の行自体がまだ無い可能性がある
+          privateNotes.push(movedRecord);
+          if(isFirstEverNote) await safeSet(privateNotesKey(), privateNotes);
+          else await rpcArrAppend(privateNotesKey(), movedRecord);
+        }
+      }
+      closeModal(); showToast('更新しました。');
+      refreshJournalViews();
+      if(matchedEntityId) showEntity(matchedEntityId, {fromTrail:true});
+      else if(coords) flyToNav(coords, zoomForCoords(coords,null), {duration:0.7});
+      return;
+    }
     const record = {
       id: 'j-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-      entityId: prefill.entityId || null,
+      entityId: matchedEntityId,
       placeName: name, coords,
       visibility,
       visitedDate: document.getElementById('j-date').value,
       comment,
-      image: uploadedImageData || document.getElementById('j-image').value.trim() || null,
+      image: imageVal,
       createdAt: Date.now(),
       authorId: currentUser.id,
       authorName: getDisplayName(currentUser),
@@ -6222,7 +6313,7 @@ function openJournalModal(prefill){
     clearDraft('journal', journalDraftId);
     closeModal(); showToast('保存しました。');
     renderJournalMarkers();
-    if(prefill.entityId) showEntity(prefill.entityId, {fromTrail:true});
+    if(matchedEntityId) showEntity(matchedEntityId, {fromTrail:true});
     else if(coords) flyToNav(coords, zoomForCoords(coords,null), {duration:0.7});
   });
 }
@@ -6295,6 +6386,8 @@ async function deleteJournalReply(journalId, replyId){
   refreshJournalViews();
 }
 document.addEventListener('click', async (ev)=>{
+  const editBtn = ev.target.closest('[data-edit-journal]');
+  if(editBtn){ openJournalModal({editJournalId: editBtn.dataset.editJournal}); return; }
   const delBtn = ev.target.closest('[data-del-journal]');
   if(delBtn){ deleteJournal(delBtn.dataset.delJournal); return; }
   const delReplyBtn = ev.target.closest('[data-del-reply-id]');
