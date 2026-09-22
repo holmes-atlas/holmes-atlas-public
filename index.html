@@ -605,6 +605,15 @@ body.map-picking .leaflet-container{cursor:crosshair;}
 .modal-cancel{background:none;border:1px solid var(--line);color:var(--charcoal);padding:7px 16px;border-radius:3px;cursor:pointer;}
 .modal-submit{background:var(--brass);border:none;color:#fff;padding:7px 18px;border-radius:3px;cursor:pointer;}
 .modal-submit:disabled{opacity:.45;cursor:not-allowed;}
+/* 「項目の追加・編集等」モーダル（openEntityManageModal）専用。旧来は
+   「＋新しい項目を追加」「編集一覧」「データをエクスポート」の3つが
+   ヘッダーに個別のボタンとして並んでいて手狭だったため、1つのボタンに
+   まとめ、開くとここで3択を選ぶ形にした。 */
+.menu-choice-list{display:flex;flex-direction:column;gap:8px;margin:14px 0;}
+.menu-choice-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;background:var(--parchment-2);border:1px solid var(--line);border-radius:4px;padding:10px 14px;cursor:pointer;font-family:inherit;}
+.menu-choice-btn:hover{background:#e6d9b8;border-color:var(--brass);}
+.menu-choice-label{font-weight:600;font-size:.92rem;color:var(--ink);}
+.menu-choice-sub{font-size:.78rem;color:var(--slate);}
 /* 出発地・目的地を自分で選ぶモーダル（openRoutePickStopsModal）専用。地点ごとに
    1行、右側に◎（出発地）○（目的地）の2つのボタンを並べる。地点数が多い
    （最大25件）ことを考慮し、リスト自体を内側でスクロールさせてモーダルの
@@ -782,11 +791,9 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <button class="hbtn index-toggle" id="indexToggle">索引</button>
     <div class="action-btns" id="actionBtns">
       <button class="hbtn" id="guideBtn">📖 使い方ガイド</button>
-      <button class="hbtn primary" id="addEntityBtn">＋ 新しい項目を追加</button>
+      <button class="hbtn primary" id="entityManageBtn">項目の追加・編集等<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
       <button class="hbtn" id="addJournalBtn">＋ 訪問記録を追加</button>
-      <button class="hbtn" id="myEditsBtn">編集一覧<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
       <button class="hbtn" id="timelineToggle">タイムライン</button>
-      <button class="hbtn" id="exportBtn">データをエクスポート</button>
       <span class="auth-area" id="authArea"></span>
     </div>
     <button class="hbtn menu-toggle" id="menuToggle">☰ メニュー</button>
@@ -4475,7 +4482,7 @@ const GUIDE_SECTIONS = [
     title: '🤝 みんなで育てるサイトです',
     body: [
       '「ホームズ・アトラス」は、運営者一人だけでなく、シャーロキアンの有志が力を合わせて育てていくことを目指したファンサイトです。地点・人物・作品・用語の項目は、利用者のみなさんからの「追加・編集」の提案によって、少しずつ充実していきます。',
-      '「この場所についてもっと詳しく書きたい」「気になる作品の項目を作りたい」という方は、ヘッダーメニューの「＋ 新しい項目を追加」や、各ページの「編集する」から、ぜひ気軽に提案してみてください。執筆・編集に興味を持ってくださった方からのご連絡もお待ちしています。X（旧Twitter）: <a href="https://x.com/221bkcolrehs" target="_blank" rel="noopener noreferrer">@221bkcolrehs</a>、またはメール（<a href="mailto:holmesatlas.info@gmail.com">holmesatlas.info@gmail.com</a>）まで、お気軽にどうぞ。'
+      '「この場所についてもっと詳しく書きたい」「気になる作品の項目を作りたい」という方は、ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」や、各ページの「編集する」から、ぜひ気軽に提案してみてください。執筆・編集に興味を持ってくださった方からのご連絡もお待ちしています。X（旧Twitter）: <a href="https://x.com/221bkcolrehs" target="_blank" rel="noopener noreferrer">@221bkcolrehs</a>、またはメール（<a href="mailto:holmesatlas.info@gmail.com">holmesatlas.info@gmail.com</a>）まで、お気軽にどうぞ。'
     ]
   },
   {
@@ -4519,8 +4526,8 @@ const GUIDE_SECTIONS = [
   {
     title: '✏️ 項目の追加・編集',
     body: [
-      'ヘッダーメニューの「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、各ページの「編集する」から内容を修正できます。',
-      '一般の利用者による追加・編集は「提案」として送信され、審査担当者の確認後に反映されます。自分が出した提案の状況は「編集一覧」から確認できます。'
+      'ヘッダーメニューの「項目の追加・編集等」→「＋ 新しい項目を追加」から、地点・人物・作品・用語を新規に登録できます。既存の項目も、各ページの「編集する」から内容を修正できます。',
+      '一般の利用者による追加・編集は「提案」として送信され、審査担当者の確認後に反映されます。自分が出した提案の状況は、同じく「項目の追加・編集等」の中の「編集一覧」から確認できます。'
     ]
   },
   {
@@ -4837,10 +4844,44 @@ function openEntityModal(prefill){
     }
   });
 }
-document.getElementById('addEntityBtn').addEventListener('click', ()=>{
-  if(!currentUser){ showToast('新しい項目の追加にはログインが必要です。'); return; }
-  openEntityModal();
-});
+// 「項目の追加・編集等」。新規追加・編集一覧・データエクスポートの3つを
+// ヘッダーの1つのボタンにまとめ、開いたモーダルで選んでもらう。
+function openEntityManageModal(){
+  modalBody.innerHTML = `
+    <h3>項目の追加・編集等</h3>
+    <div class="modal-sub">地名・人物・作品・用語の追加や、これまでの提案の確認、データのエクスポートができます。</div>
+    <div class="menu-choice-list">
+      <button type="button" class="menu-choice-btn" id="emm-add">
+        <span class="menu-choice-label">＋ 新しい項目を追加</span>
+        <span class="menu-choice-sub">地名・人物・作品・用語を新しく登録します</span>
+      </button>
+      <button type="button" class="menu-choice-btn" id="emm-myedits">
+        <span class="menu-choice-label">編集一覧<span class="my-edits-count-badge" id="myEditsCountBadgeInline"></span></span>
+        <span class="menu-choice-sub">自分が送った提案の状況を確認します</span>
+      </button>
+      <button type="button" class="menu-choice-btn" id="emm-export">
+        <span class="menu-choice-label">データをエクスポート</span>
+        <span class="menu-choice-sub">全項目のデータをJSON・CSV形式で書き出します</span>
+      </button>
+    </div>
+    <div class="modal-actions"><button class="modal-cancel" id="emm-close">閉じる</button></div>`;
+  overlay.classList.add('open');
+  const inlineBadge = document.getElementById('myEditsCountBadgeInline');
+  if(inlineBadge) inlineBadge.textContent = document.getElementById('myEditsCountBadge')?.textContent || '';
+  document.getElementById('emm-close').addEventListener('click', closeModal);
+  document.getElementById('emm-add').addEventListener('click', ()=>{
+    if(!currentUser){ showToast('新しい項目の追加にはログインが必要です。'); return; }
+    openEntityModal();
+  });
+  document.getElementById('emm-myedits').addEventListener('click', ()=>{
+    if(!currentUser){ showToast('編集一覧の閲覧にはログインが必要です。'); return; }
+    openMyEditsModal();
+    markMyEditsSeen();
+    updateMyEditsCountBadge();
+  });
+  document.getElementById('emm-export').addEventListener('click', openExportModal);
+}
+document.getElementById('entityManageBtn').addEventListener('click', openEntityManageModal);
 
 function openEditModal(targetId){
   const e = DATA[targetId];
@@ -4985,7 +5026,6 @@ function openExportModal(){
   document.getElementById('export-json-btn').addEventListener('click', ()=>{ exportAsJSON(); closeModal(); showToast('JSONファイルをダウンロードしました。'); });
   document.getElementById('export-csv-btn').addEventListener('click', ()=>{ exportAsCSV(); closeModal(); showToast('CSVファイルをダウンロードしました。'); });
 }
-document.getElementById('exportBtn').addEventListener('click', openExportModal);
 
 async function openReportModal(journalId){
   if(!currentUser){ showToast('通報にはログインが必要です。'); return; }
@@ -5246,12 +5286,6 @@ function openMyEditsModal(){
     });
   });
 }
-document.getElementById('myEditsBtn').addEventListener('click', ()=>{
-  if(!currentUser){ showToast('編集一覧の閲覧にはログインが必要です。'); return; }
-  openMyEditsModal();
-  markMyEditsSeen();
-  updateMyEditsCountBadge();
-});
 
 // 審査ダッシュボードの「承認・却下履歴」に出す件数の上限。無制限にすると
 // サイトが育つほど一覧が際限なく伸びてしまうため、直近分だけに絞っている。
