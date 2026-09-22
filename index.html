@@ -541,6 +541,8 @@ body.map-picking .leaflet-container{cursor:crosshair;}
    入力欄自体のフォーカスリングは通常通り表示される）。 */
 #modalBody:focus{outline:none;}
 .modal h3{font-family:'Playfair Display',serif;margin:0 0 4px;font-size:1.25rem;color:var(--ink);}
+.jd-title-link{background:none;border:none;padding:0;margin:0;font:inherit;color:var(--brass);text-decoration:underline;text-decoration-color:var(--line);cursor:pointer;text-align:left;}
+.jd-title-link:hover{text-decoration-color:var(--brass);}
 .modal .modal-sub{font-size:.82rem;opacity:.7;margin-bottom:16px;}
 /* 使い方ガイド（openUsageGuideModal）専用。長文になるので、見出し＋本文の
    セクションを縦に並べる。.modal自体がoverflow-y:autoなので、モーダルの中で
@@ -6437,13 +6439,18 @@ document.addEventListener('click', async (ev)=>{
 function openJournalDetail(id, opts={}){
   const j = journal.find(x=>x.id===id);
   if(!j) return;
+  const titleName = j.entityId ? (DATA[j.entityId]?.name || j.placeName) : j.placeName;
   modalBody.innerHTML = `
-    <h3>${escapeHtml(j.placeName)}</h3>
+    <h3>${(j.entityId && DATA[j.entityId]) ? `<button type="button" class="jd-title-link" id="jd-entity-link">${escapeHtml(titleName)}</button>` : escapeHtml(titleName)}</h3>
     <div class="modal-sub">${j.visitedDate?('訪問日: '+escapeHtml(j.visitedDate)):''}</div>
     ${renderJournalCard(j, {detail:true})}
     <div class="modal-actions"><button class="modal-cancel" id="jd-close">閉じる</button></div>`;
   overlay.classList.add('open');
   document.getElementById('jd-close').addEventListener('click', closeModal);
+  document.getElementById('jd-entity-link')?.addEventListener('click', ()=>{
+    closeModal();
+    showEntity(j.entityId);
+  });
   if(!opts.skipUrlUpdate) setUrlForJournal(id);
   document.title = (j.placeName || 'ホームズ・アトラス') + 'の訪問記録 | ホームズ・アトラス';
   journalUrlActive = true;
@@ -6470,7 +6477,7 @@ function renderTimeline(){
   document.getElementById('timelineClose').addEventListener('click', ()=>timelineEl.classList.remove('open'));
   timelineEl.querySelectorAll('[data-tl-entity]').forEach(card=>{
     card.addEventListener('click', (ev)=>{
-      if(ev.target.closest('[data-del-journal],[data-like-journal],[data-reply-toggle],[data-reply-submit],[data-report-journal],.jc-reply-form,.jc-replies')) return;
+      if(ev.target.closest('[data-edit-journal],[data-del-journal],[data-like-journal],[data-reply-toggle],[data-reply-submit],[data-report-journal],.jc-reply-form,.jc-replies')) return;
       const eid = card.dataset.tlEntity;
       timelineEl.classList.remove('open');
       if(eid) showEntity(eid);
@@ -6527,7 +6534,7 @@ function renderMyBook(){
   document.getElementById('myBookClose').addEventListener('click', ()=>myBookEl.classList.remove('open'));
   myBookEl.querySelectorAll('[data-tl-entity]').forEach(card=>{
     card.addEventListener('click', (ev)=>{
-      if(ev.target.closest('[data-del-journal],[data-like-journal],[data-reply-toggle],[data-reply-submit],[data-report-journal],.jc-reply-form,.jc-replies')) return;
+      if(ev.target.closest('[data-edit-journal],[data-del-journal],[data-like-journal],[data-reply-toggle],[data-reply-submit],[data-report-journal],.jc-reply-form,.jc-replies')) return;
       const eid = card.dataset.tlEntity;
       myBookEl.classList.remove('open');
       if(eid) showEntity(eid);
