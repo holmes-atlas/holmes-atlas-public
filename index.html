@@ -791,8 +791,8 @@ body.map-picking .leaflet-container{cursor:crosshair;}
     <button class="hbtn index-toggle" id="indexToggle">索引</button>
     <div class="action-btns" id="actionBtns">
       <button class="hbtn" id="guideBtn">📖 使い方ガイド</button>
-      <button class="hbtn primary" id="entityManageBtn">項目の追加・編集等<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
-      <button class="hbtn" id="addJournalBtn">＋ 訪問記録を追加</button>
+      <button class="hbtn" id="entityManageBtn">項目の追加・編集等<span class="my-edits-count-badge" id="myEditsCountBadge"></span></button>
+      <button class="hbtn" id="addJournalBtn">訪問記録・コメントの投稿</button>
       <button class="hbtn" id="timelineToggle">タイムライン</button>
       <span class="auth-area" id="authArea"></span>
     </div>
@@ -4518,7 +4518,7 @@ const GUIDE_SECTIONS = [
   {
     title: '📔 訪問記録とマイ巡礼手帳',
     body: [
-      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「＋ 訪問記録を追加」、または各地点ページから追加できます。',
+      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「訪問記録・コメントの投稿」、または各地点ページから追加できます。',
       '「📔 マイ巡礼手帳」（ログイン後にヘッダーへ表示）では、自分の訪問記録と、正典に登場する地点のうちどれだけ巡ったかという踏破状況がまとめて見られます。',
       '「タイムライン」では、自分に限らずサイト利用者全体の訪問記録が新着順に並びます。'
     ]
@@ -6284,7 +6284,7 @@ function renderMyBook(){
       <div class="jc-place">${label}</div>
       ${renderJournalCard(j)}
     </div>`;
-  }).join('') : '<p class="empty-msg">まだ訪問記録がありません。「＋ 訪問記録を追加」から書いてみましょう。</p>';
+  }).join('') : '<p class="empty-msg">まだ訪問記録がありません。「訪問記録・コメントの投稿」から書いてみましょう。</p>';
   myBookEl.innerHTML = `<button type="button" class="timeline-close" id="myBookClose" title="閉じる" aria-label="マイ巡礼手帳を閉じる">×</button><h2>マイ巡礼手帳</h2><div class="mybook-section-label">${escapeHtml(getDisplayName(currentUser))}さんの記録</div>${statsHtml}<div>${listHtml}</div>`;
   document.getElementById('myBookClose').addEventListener('click', ()=>myBookEl.classList.remove('open'));
   myBookEl.querySelectorAll('[data-tl-entity]').forEach(card=>{
