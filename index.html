@@ -4557,7 +4557,7 @@ const GUIDE_SECTIONS = [
   {
     title: '📔 訪問記録とマイ巡礼手帳',
     body: [
-      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「訪問記録・コメントの投稿」、または各地点ページから追加できます。ヘッダーから投稿する場合、位置検索の候補一覧に出てくる「アトラス内の地名」を選ぶと、その地点ページの訪問記録・コメント欄にも表示されるようになります。',
+      'ログインすると、実際に訪れた地点に「訪問記録」を残せます（写真・コメント・訪問日を添えられます）。ヘッダーメニューの「訪問記録・コメントの投稿」、または各地点ページから追加できます。ヘッダーから投稿する場合、位置検索の候補一覧に出てくる「アトラス内の地名」を選ぶと、その地点ページの訪問記録・コメント欄にも表示されるようになります（地図上の候補地や「地図で指定する」を使った場合も、登録済みの地点とほぼ同じ場所であれば自動的に紐付きます）。',
       '「📔 マイ巡礼手帳」（ログイン後にヘッダーへ表示）では、自分の訪問記録と、正典に登場する地点のうちどれだけ巡ったかという踏破状況がまとめて見られます。',
       '「タイムライン」では、自分に限らずサイト利用者全体の訪問記録が新着順に並びます。',
       '自分が投稿した訪問記録・コメントは、投稿の右下にある「編集」から内容を書き直せます（タイムライン・マイ巡礼手帳・各項目ページのどこからでも操作できます）。'
@@ -6031,7 +6031,10 @@ function openJournalModal(prefill){
   // 紐付け、当該項目ページの「訪問記録・コメント」欄にも表示されるようにする。
   // 外部の候補地を選んだ場合や、選んだ後に名称欄を手で書き換えた場合は
   // 紐付けを外す（実際とは違う項目に記録が付いてしまうのを防ぐため）。
-  let matchedEntityId = prefill.entityId || null;
+  // すでに座標があるのにどの項目にも紐付いていない場合（過去の投稿の編集や、
+  // 地図上の地点をタップして開いた場合など）は、近くに登録済みの地点があれば
+  // 自動で紐付ける（名称検索だと候補に出てこなかったケースの保険）。
+  let matchedEntityId = prefill.entityId || (coords ? findNearbyPlaceEntity(coords) : null);
   const initialVisibility = editRecord && editRecord.visibility === 'private' ? 'private' : 'public';
   modalBody.innerHTML = `
     <h3>${editId ? (isPlaceKind ? '訪問記録・コメントを編集' : '感想を編集') : (isPlaceKind ? '訪問記録・コメントを追加' : '感想を投稿')}</h3>
@@ -6141,13 +6144,17 @@ function openJournalModal(prefill){
     const jGeoResults = document.getElementById('j-geo-results');
     function applyJournalLocation(coordsPair, name, entityId){
       coords = coordsPair;
-      matchedEntityId = entityId || null;
+      // 「アトラス内の地名」を選んだ場合はそのIDをそのまま使う。外部の候補地を
+      // 選んだ場合でも、登録済みの地点とほぼ同じ座標（数十m以内）ならそちらに
+      // 自動で紐付ける（名称のあいまい検索だと登録名と検索語がずれて候補に
+      // 出てこないことがあるための保険）。
+      matchedEntityId = entityId || findNearbyPlaceEntity(coordsPair) || null;
       const nameEl = document.getElementById('j-name');
       if(!nameEl.value.trim() && name) nameEl.value = name;
       const pickedEl = document.getElementById('j-geo-picked');
       if(pickedEl){ pickedEl.style.display='none'; pickedEl.textContent=''; } // 地図クリック由来の表示は検索確定でクリア
       jGeoResults.classList.remove('show');
-      showToast(entityId ? 'アトラス内の項目に紐付けました。' : '位置情報を設定しました。');
+      showToast(matchedEntityId ? 'アトラス内の項目に紐付けました。' : '位置情報を設定しました。');
     }
     function renderJournalGeoResults(localIds, externalResults){
       let html = '';
@@ -6215,13 +6222,14 @@ function openJournalModal(prefill){
     document.getElementById('j-geo-map-pick').addEventListener('click', ()=>{
       pickLocationOnMap(latlng=>{
         coords = [latlng.lat, latlng.lng];
-        matchedEntityId = null; // 地図上の任意の地点は登録済みの項目と紐付かない
+        // 指した地点が登録済みの地点とほぼ同じ座標なら自動で紐付ける（保険）。
+        matchedEntityId = findNearbyPlaceEntity(coords);
         const pickedEl = document.getElementById('j-geo-picked');
         if(pickedEl){
           pickedEl.style.display = 'block';
           pickedEl.textContent = `座標を設定しました（${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}）`;
         }
-        showToast('地図上の地点を設定しました。');
+        showToast(matchedEntityId ? '近くの登録済み地点に紐付けました。' : '地図上の地点を設定しました。');
       });
     });
   }
@@ -6572,6 +6580,22 @@ function localMatches(q){
 // 座標を持つ項目だけに絞ったlocalMatches。
 function localPlaceMatches(q){
   return Object.keys(DATA).filter(id=>DATA[id].type==='place' && DATA[id].coords && fuzzyMatch(DATA[id].name, q)).slice(0,6);
+}
+// 訪問記録の投稿で、外部の地図検索や「地図で指定する」で選んだ地点が、
+// 登録済みの地点とほぼ同じ場所（既定50m以内）だった場合に、その項目へ
+// 自動的に紐付けるためのもの。名称のあいまい検索（アトラス内の地名）だけだと
+// 登録名と検索語が食い違って候補に出てこないことがあり、その場合でも
+// 座標ベースで拾えるようにする保険。
+function findNearbyPlaceEntity(coordsPair, thresholdKm){
+  thresholdKm = thresholdKm || 0.05;
+  let bestId = null, bestDist = Infinity;
+  Object.keys(DATA).forEach(id=>{
+    const e = DATA[id];
+    if(e.type!=='place' || !e.coords) return;
+    const d = haversineKm(coordsPair, e.coords);
+    if(d < bestDist){ bestDist = d; bestId = id; }
+  });
+  return (bestId!==null && bestDist<=thresholdKm) ? bestId : null;
 }
 function renderSearchResults(localIds, externalResults, query){
   let html='';
