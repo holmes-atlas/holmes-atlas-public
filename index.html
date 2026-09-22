@@ -5893,7 +5893,7 @@ function openJournalModal(prefill){
   modalBody.innerHTML = `
     <h3>${isPlaceKind ? '訪問記録・コメントを追加' : '感想を投稿'}</h3>
     <div class="modal-sub">${isPlaceKind ? 'その場で保存されます。' : '訪れたことがなくても、読んだ感想や気づいたことを投稿できます。'}</div>
-    <div class="field"><label>${isPlaceKind ? '場所の名前' : '対象'}</label><input type="text" id="j-name" value="${prefill.name?escapeAttr(prefill.name):''}" ${prefill.entityId?'readonly':''}></div>
+    <div class="field"><label>場所や項目の名称</label><input type="text" id="j-name" value="${prefill.name?escapeAttr(prefill.name):''}" ${prefill.entityId?'readonly':''}></div>
     ${!prefill.entityId ? `
     <div class="field">
       <label>位置を検索する（任意）</label>
@@ -6049,7 +6049,7 @@ function openJournalModal(prefill){
     if(!currentUser){ showToast('投稿にはログインが必要です。'); return; }
     const name = document.getElementById('j-name').value.trim();
     const comment = document.getElementById('j-comment').value.trim();
-    if(!name || !comment){ showToast(isPlaceKind ? '場所の名前とコメントは必須です。' : '対象とコメントは必須です。'); return; }
+    if(!name || !comment){ showToast('場所や項目の名称とコメントは必須です。'); return; }
     const record = {
       id: 'j-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
       entityId: prefill.entityId || null,
