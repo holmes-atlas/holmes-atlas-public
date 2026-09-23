@@ -390,16 +390,12 @@ button,input,select,textarea{font-family:'Crimson Pro',serif;}
 .place-label-special::before{border-top-color:var(--burgundy)!important;}
 .leaflet-journal-icon{background:var(--teal);border:2px solid var(--parchment);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5);}
 .leaflet-journal-icon svg{width:11px;height:11px;}
-/* 同じ座標に別のピン（地点自身、または他の訪問記録）が重なる場合だけ使う、
-   「線で本来の位置とつなぐ」タイプのアイコン。外側の箱自体はクリック判定を
-   持たせたくない（本来の座標の真上をタップした時に誤って反応してほしくない）
-   ので透明・pointer-events:noneにし、実際のバッジ部分だけ有効にする。
-   バッジ自体も通常の訪問記録ピンより一回り小さくして、地点ピン側の
-   タップ領域をなるべく広く残すようにしている。 */
-.leaflet-journal-icon-offset{background:transparent;pointer-events:none;}
-.leaflet-journal-icon-offset .jmi-line{position:absolute;top:0;left:0;overflow:visible;pointer-events:none;}
-.leaflet-journal-icon-offset .jmi-badge{position:absolute;width:20px;height:20px;background:var(--teal);border:2px solid var(--parchment);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;}
-.leaflet-journal-icon-offset .jmi-badge svg{width:11px;height:11px;}
+/* 本来の座標とピンの表示位置をつなぐ点線だけの飾り（makeJournalLineIcon）。
+   地点ピン・訪問記録ピンどちらのタップも邪魔しないよう、要素全体を
+   クリック判定から完全に外している。バッジ側と混在させて一部だけ
+   pointer-events:autoにする方式は機種によって判定が怪しかったため、
+   タップに反応する要素を持たない、完全に別のレイヤーに分離してある。 */
+.leaflet-journal-line-icon{background:transparent;pointer-events:none;}
 /* 訪問記録のクラスタは地点クラスタ（濃紺）と見分けられるよう、訪問記録ピン
    自体と同じteal系の色にする。has-selectedのパルス演出は地点側のみで使う
    ものなのでここでは使わない（journalMarkerClusterGroup専用のクラス）。 */
@@ -3647,44 +3643,45 @@ function makeSpecialIcon(){
     iconSize:[36,36], iconAnchor:[18,18]});
 }
 // offset: {dx,dy}を渡すと、実際の座標はそのままに、見た目のピンの表示位置
-// だけをそのぶんずらす。同じ座標に複数のピンが重なってしまう場合（紐付いた
-// 地点ピンと、あるいは訪問記録同士）に、少しずつ位置をずらして両方・全部を
-// タップできるようにするための仕組み。
-// ずらす場合は、単にアイコンをずらすだけだと「近くの別の場所」なのか
-// 「同じ地点の別ピン」なのか地図上で分かりにくいので、アイコンを少し大きめの
-// 箱にして、本来の座標の位置に小さな点を、そこからピンまで細い線を引いて
-// 見た目でも繋がりが分かるようにしている（外箱自体はクリック判定を持たせず、
-// ピンのバッジ部分だけタップできるようにする）。
+// だけをそのぶんずらす（マーカー自身のクリック判定は、ずらした後のこの
+// 小さいアイコン1個ぶんだけなので、地点ピン側の判定を邪魔しない）。
+// 同じ座標に複数のピンが重なってしまう場合（紐付いた地点ピンと、あるいは
+// 訪問記録同士）に、少しずつ位置をずらして両方・全部をタップできるように
+// するための仕組み。「本来の座標とつながっている」ことを示す点線は、この
+// アイコンとは別の、クリックに一切反応しない専用レイヤー（makeJournalLineIcon /
+// journalLineLayerGroup）で描く。バッジと同じ要素の中に混ぜて
+// pointer-events:none/autoを使い分けると、機種によってはクリック判定が
+// バッジ側に取られてしまうことがあったため、完全に別レイヤーに分離してある。
 function makeJournalIcon(offset){
   const dx = offset ? offset.dx : 0;
   const dy = offset ? offset.dy : 0;
-  if(!dx && !dy){
-    return L.divIcon({className:'leaflet-journal-icon',
-      html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>',
-      iconSize:[20,20], iconAnchor:[10,10]});
-  }
-  const half = 10, pad = 6;
-  const minX = Math.min(0,dx) - half - pad, maxX = Math.max(0,dx) + half + pad;
-  const minY = Math.min(0,dy) - half - pad, maxY = Math.max(0,dy) + half + pad;
-  const w = maxX - minX, h = maxY - minY;
-  const ax = -minX, ay = -minY;           // 箱の中での「本来の座標」の位置
-  const px = ax + dx, py = ay + dy;       // 箱の中での「ピンを表示する位置」
-  // 線は本来の座標（＝地点ピン自身がある場所）からも、写真バッジからも
-  // 少し離した場所から引く。端点をぴったり本来の座標に合わせると、
-  // そこに重なっている地点ピン自体を線が覆い隠してしまうため。
+  return L.divIcon({className:'leaflet-journal-icon',
+    html:'<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>',
+    iconSize:[20,20], iconAnchor:[10-dx, 10-dy]});
+}
+// 本来の座標とピンの表示位置を結ぶ、細い点線だけの飾り。クリックには一切
+// 反応させたくない（地点ピン側のタップを邪魔したくない）ので、このアイコン
+// 全体をpointer-events:noneにし、専用のjournalLineLayerGroup（クラスタ化
+// されない、ただの飾りレイヤー）に乗せて使う。
+function makeJournalLineIcon(dx,dy){
   const dist = Math.hypot(dx,dy) || 1;
   const ux = dx/dist, uy = dy/dist;
-  const gapStart = 15, gapEnd = half + 3;
-  const lx1 = ax + ux*gapStart, ly1 = ay + uy*gapStart;
-  const lx2 = px - ux*gapEnd, ly2 = py - uy*gapEnd;
-  const html = `<svg class="jmi-line" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+  // 地点ピン側・訪問記録ピン側、それぞれの見た目の半径ぶん手前で線を止めて、
+  // どちらのピンにも線がかからないようにする。
+  const gapStart = 15, gapEnd = 13;
+  const x1 = ux*gapStart, y1 = uy*gapStart;
+  const x2 = dx - ux*gapEnd, y2 = dy - uy*gapEnd;
+  const pad = 4;
+  const minX = Math.min(x1,x2) - pad, maxX = Math.max(x1,x2) + pad;
+  const minY = Math.min(y1,y2) - pad, maxY = Math.max(y1,y2) + pad;
+  const w = maxX - minX, h = maxY - minY;
+  const ax = -minX, ay = -minY; // 箱の中での「本来の座標」の位置
+  const lx1 = x1 - minX, ly1 = y1 - minY, lx2 = x2 - minX, ly2 = y2 - minY;
+  const html = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">`
     + `<line x1="${lx1.toFixed(1)}" y1="${ly1.toFixed(1)}" x2="${lx2.toFixed(1)}" y2="${ly2.toFixed(1)}" stroke="#3a3226" stroke-width="1.6" stroke-dasharray="2.5 3" opacity="0.75"/>`
     + `<circle cx="${lx1.toFixed(1)}" cy="${ly1.toFixed(1)}" r="2" fill="#3a3226" opacity="0.8"/>`
-    + `</svg>`
-    + `<div class="jmi-badge" style="left:${px-half}px;top:${py-half}px;">`
-    + `<svg viewBox="0 0 24 24" fill="none" stroke="#ece3cc" stroke-width="2.2"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.3" r="3"/></svg>`
-    + `</div>`;
-  return L.divIcon({className:'leaflet-journal-icon-offset', html, iconSize:[w,h], iconAnchor:[ax,ay]});
+    + `</svg>`;
+  return L.divIcon({className:'leaflet-journal-line-icon', html, iconSize:[w,h], iconAnchor:[ax,ay]});
 }
 // slot=0は「ずらさない」（＝紐付いた地点ピン自身、または重複のない単独の
 // 訪問記録ピンの位置）。slot>=1のピンを、中心の周りに少しずつ広がる輪の上に
@@ -3995,6 +3992,11 @@ const journalMarkerClusterGroup = L.markerClusterGroup({
   }
 }).addTo(map);
 let journalMarkers = [];
+// 「本来の座標とピンをつなぐ点線」専用の飾りレイヤー。クリックに反応する
+// 要素を一切含まないので、クラスタ化の対象にもしていない（クラスタの
+// 件数バッジに数えられてしまうのを避けるため、journalMarkerClusterGroupとは
+// あえて別のLayerGroupにしてある）。
+const journalLineLayerGroup = L.layerGroup().addTo(map);
 // 訪問記録ピンの表示・非表示（表示絞り込みメニュー内のチェックで切り替え）。
 // クラスタ化は「多すぎて重い・見づらい」への対処だが、こちらは「今は地点そのもの
 // に集中したいので訪問記録ピンごと視界から消したい」という別のニーズへの対処。
@@ -4005,12 +4007,15 @@ function setJournalMarkersVisible(visible){
   journalMarkersVisible = visible;
   if(visible){
     if(!map.hasLayer(journalMarkerClusterGroup)) map.addLayer(journalMarkerClusterGroup);
+    if(!map.hasLayer(journalLineLayerGroup)) map.addLayer(journalLineLayerGroup);
   } else {
     if(map.hasLayer(journalMarkerClusterGroup)) map.removeLayer(journalMarkerClusterGroup);
+    if(map.hasLayer(journalLineLayerGroup)) map.removeLayer(journalLineLayerGroup);
   }
 }
 function renderJournalMarkers(){
   journalMarkerClusterGroup.clearLayers();
+  journalLineLayerGroup.clearLayers();
   journalMarkers = [];
   // renderMarkers()と同じ理由で、1件ずつaddLayerせず配列にまとめてから
   // addLayers()を1回だけ呼ぶ。訪問記録は件数の上限を設けていないため、
@@ -4036,10 +4041,14 @@ function renderJournalMarkers(){
     const hasPlacePin = list.some(j=> j.entityId && DATA[j.entityId]?.type === 'place');
     list.forEach((j, i)=>{
       const slot = hasPlacePin ? i+1 : i;
-      const m = L.marker(j.coords, {icon: makeJournalIcon(journalMarkerOffset(slot))});
+      const offset = journalMarkerOffset(slot);
+      const m = L.marker(j.coords, {icon: makeJournalIcon(offset)});
       m.on('click', ()=>{ if(mapPickModeActive) return; openJournalDetail(j.id); });
       m.bindTooltip(escapeHtml(j.placeName), {direction:'top', offset:[0,-8]});
       journalMarkers.push(m);
+      if(offset){
+        journalLineLayerGroup.addLayer(L.marker(j.coords, {icon: makeJournalLineIcon(offset.dx, offset.dy), interactive:false, keyboard:false}));
+      }
     });
   });
   journalMarkerClusterGroup.addLayers(journalMarkers);
