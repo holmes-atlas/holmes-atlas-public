@@ -6578,7 +6578,12 @@ function renderTimeline(){
       if(eid) showEntity(eid);
       else if(card.dataset.tlLat){
         const c=[parseFloat(card.dataset.tlLat), parseFloat(card.dataset.tlLng)];
-        flyToNav(c, zoomForCoords(c,null), {duration:0.7});
+        // entityIdが未設定の古い投稿でも、座標が登録済みの地点とほぼ同じなら
+        // その地点自体のページへ飛ばす（showEntity()経由でないと、クラスタの
+        // 中に隠れている地点ピンが展開されず、元の項目が表示されないままになる）。
+        const nearId = findNearbyPlaceEntity(c);
+        if(nearId) showEntity(nearId);
+        else flyToNav(c, zoomForCoords(c,null), {duration:0.7});
       }
     });
   });
@@ -6635,7 +6640,12 @@ function renderMyBook(){
       if(eid) showEntity(eid);
       else if(card.dataset.tlLat){
         const c=[parseFloat(card.dataset.tlLat), parseFloat(card.dataset.tlLng)];
-        flyToNav(c, zoomForCoords(c,null), {duration:0.7});
+        // entityIdが未設定の古い投稿でも、座標が登録済みの地点とほぼ同じなら
+        // その地点自体のページへ飛ばす（showEntity()経由でないと、クラスタの
+        // 中に隠れている地点ピンが展開されず、元の項目が表示されないままになる）。
+        const nearId = findNearbyPlaceEntity(c);
+        if(nearId) showEntity(nearId);
+        else flyToNav(c, zoomForCoords(c,null), {duration:0.7});
       }
     });
   });
