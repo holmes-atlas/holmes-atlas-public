@@ -4869,7 +4869,7 @@ function wireMapPickButton(){
   });
 }
 
-function openEntityModal(prefill){
+function openEntityModal(prefill, draftId){
   prefill = (prefill && typeof prefill.lat==='number') ? prefill : null;
   let uploadedImageData = null;
   modalBody.innerHTML = `
@@ -4913,13 +4913,37 @@ function openEntityModal(prefill){
   const newEntityDraftFields = ['f-type','f-name','f-desc','f-image','f-image-credit','f-image-license','f-image-source','f-lat','f-lng','f-relevance','f-canon'];
   // ★編集画面（openEditModal）と同様、「復元する／破棄する」のバナーは廃止し、
   // 一時保存の内容があればバナーなしでそのままフォームに反映する形に単純化した。
-  const newEntityDraft = loadDraft('newEntity', 'new');
+  //
+  // 下書きIDについて：以前はどの「新しい項目を追加」も一律で固定の'new'という
+  // IDに保存していたため、複数のタブなどで同時に別々の新規項目を書きかけに
+  // すると、後から保存した方が先の下書きを上書きしてしまい、「別の項目を
+  // 編集していたはずが違う下書きが出てくる」事故が起きていた。draftIdが
+  // 明示的に渡された場合（編集一覧の「続きを編集」から特定の下書きを
+  // 指定して開いた場合）はその下書きだけを復元し、指定が無ければこの端末に
+  // 残っている最新の新規追加下書きを（あれば）自動的に復元しつつ、以後の
+  // 自動保存にはその下書き専用のIDを新規発行して割り当てる。これにより、
+  // 同時に複数の新規追加を書きかけにしても、それぞれ別の保存先を持つため
+  // 混ざらない。
+  let resolvedDraftId = draftId || null;
+  let newEntityDraft = null;
+  if(resolvedDraftId){
+    newEntityDraft = loadDraft('newEntity', resolvedDraftId);
+  } else if(!prefill){
+    // prefill（検索結果などから「これを新しい項目として追加」で開いた場合の
+    // 名称・座標）が無い、純粋にメニューから開いた場合だけ、この端末に残って
+    // いる最新の新規追加下書きを自動的に復元する。prefillがある場合は、
+    // それこそが今から書き始めたい内容そのものなので、無関係な古い下書きで
+    // 上書きしないよう、常に真っさらな下書きIDを新規発行する。
+    const latest = myDraftEntries().find(e=>e.formType==='newEntity');
+    if(latest){ resolvedDraftId = latest.id; newEntityDraft = {data: latest.data}; }
+  }
+  if(!resolvedDraftId) resolvedDraftId = 'n-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   if(newEntityDraft){
     applyDraftFields(newEntityDraft.data, newEntityDraftFields);
     sync();
   }
-  wireDraftAutosave('newEntity', 'new', newEntityDraftFields);
-  typeSelect.addEventListener('change', ()=>saveDraft('newEntity', 'new', newEntityDraftFields.reduce((acc,fid)=>{ const el=document.getElementById(fid); if(el) acc[fid]=el.value; return acc; }, {})));
+  wireDraftAutosave('newEntity', resolvedDraftId, newEntityDraftFields);
+  typeSelect.addEventListener('change', ()=>saveDraft('newEntity', resolvedDraftId, newEntityDraftFields.reduce((acc,fid)=>{ const el=document.getElementById(fid); if(el) acc[fid]=el.value; return acc; }, {})));
   wireGeoSearchButton(true);
   wireMapPickButton();
   document.getElementById('f-cancel').addEventListener('click', closeModal);
@@ -4929,7 +4953,7 @@ function openEntityModal(prefill){
       const el = document.getElementById(fid);
       if(el) data[fid] = el.value;
     });
-    saveDraft('newEntity', 'new', data);
+    saveDraft('newEntity', resolvedDraftId, data);
     showToast('この内容を一時保存しました（この端末にのみ残ります。まだ送信はされていません）。');
   });
   document.getElementById('f-submit').addEventListener('click', async ()=>{
@@ -4961,12 +4985,12 @@ function openEntityModal(prefill){
       });
       await Promise.all(related.map(relId=>rpcObjNestedArrayAddUnique('p-overrides', relId, 'extraRelated', newId)));
       DATA = buildData(); renderMarkers(); renderIndex(); populateViewFilterMenu();
-      clearDraft('newEntity', 'new');
+      clearDraft('newEntity', resolvedDraftId);
       closeModal(); showToast('追加しました。');
       showEntity(newId);
     } else {
       await submitProposal('new', type, null, draft);
-      clearDraft('newEntity', 'new');
+      clearDraft('newEntity', resolvedDraftId);
       closeModal(); showToast('提案を送信しました。審査担当者の確認後に反映されます。');
     }
   });
@@ -5411,7 +5435,7 @@ function draftDisplayInfo(entry){
   return { kindLabel: entry.formType, name: entry.id, savedAgoText, canContinue:false };
 }
 function continueDraft(entry){
-  if(entry.formType === 'newEntity'){ openEntityModal(); return; }
+  if(entry.formType === 'newEntity'){ openEntityModal(null, entry.id); return; }
   if(entry.formType === 'editEntity'){ if(DATA[entry.id]) openEditModal(entry.id); return; }
   if(entry.formType === 'journal'){ openJournalModal(entry.id !== 'new' ? {entityId: entry.id} : {}); return; }
 }
